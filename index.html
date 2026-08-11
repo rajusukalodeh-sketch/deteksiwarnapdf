@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Periksa Warna Cetak</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --paper:#EDEBE3;
+    --paper-dark:#E1DED3;
+    --card:#FFFFFF;
+    --ink:#1C1B19;
+    --ink-soft:#5B584F;
+    --line:#CFCBBC;
+    --cyan:#0090C9;
+    --magenta:#D6006D;
+    --yellow:#E8B800;
+    --gray-bw:#A6A296;
+    --good:#1B7A4A;
+    --radius:2px;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Mono', monospace;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{
+    max-width:920px;
+    margin:0 auto;
+    padding:28px 20px 60px;
+  }
+
+  /* ---- Header / docket strip ---- */
+  .docket{
+    background:var(--ink);
+    color:var(--paper);
+    padding:18px 20px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    border-radius:var(--radius);
+  }
+  .docket-title{
+    font-family:'Big Shoulders Display', sans-serif;
+    font-weight:800;
+    font-size:34px;
+    letter-spacing:0.5px;
+    line-height:1;
+    text-transform:uppercase;
+  }
+  .docket-sub{
+    font-size:11px;
+    color:#C9C6BB;
+    margin-top:6px;
+    letter-spacing:0.4px;
+  }
+  .regmark{
+    width:46px;height:46px;flex:0 0 auto;
+  }
+  .colorbar{
+    display:flex;height:8px;width:100%;margin-top:14px;border-radius:1px;overflow:hidden;
+  }
+  .colorbar span{flex:1;}
+
+  /* ---- Uploader ---- */
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:22px;
+    margin-top:18px;
+  }
+  .uploader{
+    border:2px dashed var(--line);
+    border-radius:var(--radius);
+    padding:36px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .uploader:hover, .uploader.drag{
+    border-color:var(--ink);
+    background:var(--paper-dark);
+  }
+  .uploader input{display:none;}
+  .uploader-label{
+    font-family:'Big Shoulders Display', sans-serif;
+    font-weight:700;
+    font-size:20px;
+    text-transform:uppercase;
+  }
+  .uploader-hint{
+    font-size:11.5px;
+    color:var(--ink-soft);
+    margin-top:6px;
+  }
+
+  .row{display:flex; gap:14px; flex-wrap:wrap; align-items:center;}
+  .field-label{font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.4px; margin-bottom:5px; display:block;}
+  select, input[type=number]{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:var(--paper);
+    color:var(--ink);
+  }
+
+  /* ---- Progress ---- */
+  .progress-wrap{margin-top:16px; display:none;}
+  .progress-wrap.active{display:block;}
+  .progress-text{font-size:12px; color:var(--ink-soft); margin-bottom:6px;}
+  .progress-track{
+    height:10px; background:var(--paper-dark); border-radius:1px; overflow:hidden;
+    border:1px solid var(--line); position:relative;
+  }
+  .progress-fill{
+    height:100%; width:0%;
+    background:repeating-linear-gradient(90deg, var(--cyan) 0 4px, var(--magenta) 4px 8px, var(--yellow) 8px 12px, var(--ink) 12px 16px);
+    transition:width .12s linear;
+  }
+
+  /* ---- Summary ---- */
+  .summary-grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:6px;
+  }
+  .stat{
+    border:1px solid var(--line); border-radius:var(--radius); padding:14px; background:var(--paper);
+  }
+  .stat-num{font-family:'Big Shoulders Display', sans-serif; font-weight:800; font-size:30px; line-height:1;}
+  .stat-label{font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.5px; margin-top:4px;}
+  .stat.color .stat-num{color:var(--magenta);}
+  .stat.bw .stat-num{color:var(--gray-bw);}
+
+  /* ---- Calculator ---- */
+  .calc{margin-top:18px; padding-top:18px; border-top:1px dashed var(--line);}
+  .calc-title{font-family:'Big Shoulders Display', sans-serif; font-weight:700; font-size:18px; text-transform:uppercase; margin-bottom:12px;}
+  .calc-inputs{display:flex; gap:20px; flex-wrap:wrap;}
+  .calc-total{
+    margin-top:16px; padding:14px 16px; background:var(--ink); color:var(--paper);
+    display:flex; justify-content:space-between; align-items:center; border-radius:var(--radius);
+  }
+  .calc-total .label{font-size:12px; color:#C9C6BB; text-transform:uppercase; letter-spacing:.4px;}
+  .calc-total .value{font-family:'Big Shoulders Display', sans-serif; font-weight:800; font-size:26px;}
+  .calc-breakdown{font-size:11.5px; color:var(--ink-soft); margin-top:8px;}
+
+  /* ---- Grid of pages ---- */
+  .pages-title{font-family:'Big Shoulders Display', sans-serif; font-weight:700; font-size:18px; text-transform:uppercase; margin:0 0 4px;}
+  .pages-hint{font-size:11px; color:var(--ink-soft); margin-bottom:12px;}
+  .pages-grid{
+    display:grid; grid-template-columns:repeat(10, 1fr); gap:4px;
+  }
+  .page-cell{
+    position:relative;
+    aspect-ratio:1; border-radius:1px; font-size:9px; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-weight:600; cursor:pointer; background:var(--gray-bw);
+    transition:transform .1s ease;
+  }
+  .page-cell:hover{transform:scale(1.12); z-index:2;}
+  .page-cell.color{background:linear-gradient(135deg, var(--cyan), var(--magenta) 50%, var(--yellow));}
+  .page-cell.pending{background:var(--paper-dark); color:var(--ink-soft); border:1px solid var(--line); cursor:default;}
+  .page-cell.pending:hover{transform:none;}
+  .page-cell.corrected::after{
+    content:'';
+    position:absolute; top:-2px; right:-2px;
+    width:7px; height:7px; border-radius:50%;
+    background:var(--ink); border:1.5px solid var(--paper);
+  }
+
+  .legend{display:flex; gap:18px; margin-top:12px; font-size:11px; color:var(--ink-soft); align-items:center; flex-wrap:wrap;}
+  .legend .sw{width:11px;height:11px;border-radius:1px;display:inline-block; margin-right:5px; vertical-align:-1px;}
+  .legend .dot{width:7px;height:7px;border-radius:50%; background:var(--ink); display:inline-block; margin-right:5px; vertical-align:1px;}
+
+  /* ---- Preview modal ---- */
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(28,27,25,0.82);
+    align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .modal-overlay.active{display:flex;}
+  .modal{
+    background:var(--card); border-radius:var(--radius); max-width:480px; width:100%;
+    max-height:90vh; overflow:auto; padding:0;
+  }
+  .modal-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 16px; border-bottom:1px solid var(--line);
+  }
+  .modal-head .title{font-family:'Big Shoulders Display', sans-serif; font-weight:700; font-size:18px; text-transform:uppercase;}
+  .modal-close{
+    background:none; border:none; font-size:20px; cursor:pointer; color:var(--ink-soft); line-height:1; padding:4px;
+  }
+  .modal-img-wrap{
+    padding:14px 16px 0; text-align:center; background:var(--paper);
+  }
+  .modal-img-wrap img{max-width:100%; border:1px solid var(--line); box-shadow:0 2px 10px rgba(0,0,0,.08);}
+  .modal-body{padding:14px 16px 18px;}
+  .modal-status{
+    font-size:12px; padding:8px 10px; border-radius:var(--radius); margin-bottom:12px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .modal-status.is-color{background:#FCE9F2; color:var(--magenta);}
+  .modal-status.is-bw{background:var(--paper-dark); color:var(--ink-soft);}
+  .modal-note{font-size:11px; color:var(--ink-soft); margin-bottom:12px;}
+  .modal-toggle-btn{width:100%;}
+
+  .actions{display:flex; gap:10px; margin-top:18px;}
+  button.btn{
+    font-family:'IBM Plex Mono', monospace; font-weight:600; font-size:12px;
+    padding:10px 16px; border-radius:var(--radius); border:1px solid var(--ink); cursor:pointer;
+    background:var(--ink); color:var(--paper); text-transform:uppercase; letter-spacing:.4px;
+  }
+  button.btn.secondary{background:transparent; color:var(--ink);}
+  button.btn:disabled{opacity:.4; cursor:not-allowed;}
+
+  .filename{font-size:12px; color:var(--ink-soft); margin-top:10px;}
+  .error{font-size:12px; color:var(--magenta); margin-top:10px;}
+
+  @media (max-width:600px){
+    .docket-title{font-size:26px;}
+    .summary-grid{grid-template-columns:1fr 1fr;}
+    .pages-grid{grid-template-columns:repeat(8,1fr);}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="docket">
+    <div>
+      <div class="docket-title">Periksa Warna Cetak</div>
+      <div class="docket-sub">Deteksi halaman berwarna &amp; estimasi biaya cetak</div>
+      <div class="colorbar">
+        <span style="background:var(--cyan)"></span>
+        <span style="background:var(--magenta)"></span>
+        <span style="background:var(--yellow)"></span>
+        <span style="background:var(--ink)"></span>
+        <span style="background:#8a8778"></span>
+        <span style="background:#c9c6bb"></span>
+      </div>
+    </div>
+    <svg class="regmark" viewBox="0 0 60 60">
+      <circle cx="30" cy="28" r="14" fill="none" stroke="#00AEEF" stroke-width="1.3" opacity="0.9"/>
+      <circle cx="32" cy="30" r="14" fill="none" stroke="#EC008C" stroke-width="1.3" opacity="0.9"/>
+      <circle cx="28" cy="30" r="14" fill="none" stroke="#F2C400" stroke-width="1.3" opacity="0.9"/>
+      <line x1="30" y1="8" x2="30" y2="52" stroke="#EDEBE3" stroke-width="1"/>
+      <line x1="8" y1="30" x2="52" y2="30" stroke="#EDEBE3" stroke-width="1"/>
+    </svg>
+  </div>
+
+  <div class="card">
+    <div class="uploader" id="uploader">
+      <input type="file" id="fileInput" accept="application/pdf">
+      <div class="uploader-label">Klik atau seret file PDF ke sini</div>
+      <div class="uploader-hint">Diproses langsung di browser — file tidak diunggah ke server mana pun</div>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <div>
+        <span class="field-label">Sensitivitas deteksi</span>
+        <select id="sensitivity">
+          <option value="low">Rendah — hanya warna dominan</option>
+          <option value="medium" selected>Sedang — disarankan</option>
+          <option value="high">Tinggi — tangkap logo/aksen kecil</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="filename" id="filename"></div>
+    <div class="error" id="error"></div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-text" id="progressText">Memproses halaman 0/0</div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+  </div>
+
+  <div class="card" id="resultsCard" style="display:none;">
+    <div class="summary-grid">
+      <div class="stat"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Total halaman</div></div>
+      <div class="stat color"><div class="stat-num" id="statColor">0</div><div class="stat-label">Halaman berwarna</div></div>
+      <div class="stat bw"><div class="stat-num" id="statBW">0</div><div class="stat-label">Halaman hitam putih</div></div>
+    </div>
+
+    <div class="calc">
+      <div class="calc-title">Estimasi Biaya Cetak</div>
+      <div class="calc-inputs">
+        <div>
+          <span class="field-label">Harga / halaman BW (Rp)</span>
+          <input type="number" id="priceBW" value="500" min="0" step="50">
+        </div>
+        <div>
+          <span class="field-label">Harga / halaman warna (Rp)</span>
+          <input type="number" id="priceColor" value="1500" min="0" step="50">
+        </div>
+      </div>
+      <div class="calc-total">
+        <div class="label">Total estimasi cetak</div>
+        <div class="value" id="calcTotal">Rp 0</div>
+      </div>
+      <div class="calc-breakdown" id="calcBreakdown"></div>
+    </div>
+
+    <div style="margin-top:22px;">
+      <div class="pages-title">Peta Halaman</div>
+      <div class="pages-hint">Klik kotak untuk melihat preview halaman &amp; koreksi status jika deteksi kurang tepat</div>
+      <div class="pages-grid" id="pagesGrid"></div>
+      <div class="legend">
+        <span><span class="sw" style="background:linear-gradient(135deg,var(--cyan),var(--magenta),var(--yellow))"></span>Berwarna</span>
+        <span><span class="sw" style="background:var(--gray-bw)"></span>Hitam putih</span>
+        <span><span class="dot"></span>Dikoreksi manual</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="exportBtn">Unduh hasil (CSV)</button>
+      <button class="btn secondary" id="resetBtn">Periksa PDF lain</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="title" id="modalTitle">Halaman</div>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-img-wrap"><img id="modalImg" alt="Preview halaman"></div>
+    <div class="modal-body">
+      <div class="modal-status" id="modalStatus">
+        <span id="modalStatusText">—</span>
+        <span id="modalStatusPct">—</span>
+      </div>
+      <div class="modal-note" id="modalNote"></div>
+      <button class="btn modal-toggle-btn" id="modalToggleBtn"></button>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const SENSITIVITY = {
+  low:    { pixelDiff: 30, ratio: 0.02 },
+  medium: { pixelDiff: 20, ratio: 0.003 },
+  high:   { pixelDiff: 12, ratio: 0.0005 }
+};
+
+const uploader = document.getElementById('uploader');
+const fileInput = document.getElementById('fileInput');
+const filenameEl = document.getElementById('filename');
+const errorEl = document.getElementById('error');
+const progressWrap = document.getElementById('progressWrap');
+const progressText = document.getElementById('progressText');
+const progressFill = document.getElementById('progressFill');
+const resultsCard = document.getElementById('resultsCard');
+const statTotal = document.getElementById('statTotal');
+const statColor = document.getElementById('statColor');
+const statBW = document.getElementById('statBW');
+const pagesGrid = document.getElementById('pagesGrid');
+const priceBWInput = document.getElementById('priceBW');
+const priceColorInput = document.getElementById('priceColor');
+const calcTotal = document.getElementById('calcTotal');
+const calcBreakdown = document.getElementById('calcBreakdown');
+const sensitivitySelect = document.getElementById('sensitivity');
+const exportBtn = document.getElementById('exportBtn');
+const resetBtn = document.getElementById('resetBtn');
+const modalOverlay = document.getElementById('modalOverlay');
+const modalClose = document.getElementById('modalClose');
+const modalTitle = document.getElementById('modalTitle');
+const modalImg = document.getElementById('modalImg');
+const modalStatus = document.getElementById('modalStatus');
+const modalStatusText = document.getElementById('modalStatusText');
+const modalStatusPct = document.getElementById('modalStatusPct');
+const modalNote = document.getElementById('modalNote');
+const modalToggleBtn = document.getElementById('modalToggleBtn');
+
+let results = []; // { page, isColor, ratio, thumb, manualOverride }
+let activePreviewPage = null;
+
+function effectiveIsColor(r){
+  return (r.manualOverride === null || r.manualOverride === undefined) ? r.isColor : r.manualOverride;
+}
+
+uploader.addEventListener('click', () => fileInput.click());
+uploader.addEventListener('dragover', e => { e.preventDefault(); uploader.classList.add('drag'); });
+uploader.addEventListener('dragleave', () => uploader.classList.remove('drag'));
+uploader.addEventListener('drop', e => {
+  e.preventDefault();
+  uploader.classList.remove('drag');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files.length) handleFile(e.target.files[0]);
+});
+
+function handleFile(file){
+  errorEl.textContent = '';
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){
+    errorEl.textContent = 'File harus berformat PDF.';
+    return;
+  }
+  filenameEl.textContent = 'File: ' + file.name;
+  resultsCard.style.display = 'none';
+  results = [];
+  const reader = new FileReader();
+  reader.onload = () => processPDF(reader.result);
+  reader.onerror = () => errorEl.textContent = 'Gagal membaca file.';
+  reader.readAsArrayBuffer(file);
+}
+
+async function processPDF(arrayBuffer){
+  progressWrap.classList.add('active');
+  pagesGrid.innerHTML = '';
+  const sens = SENSITIVITY[sensitivitySelect.value];
+
+  let pdf;
+  try {
+    pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  } catch (err) {
+    errorEl.textContent = 'Gagal membuka PDF. Pastikan file tidak rusak atau terkunci.';
+    progressWrap.classList.remove('active');
+    return;
+  }
+
+  const numPages = pdf.numPages;
+  results = new Array(numPages);
+
+  // pre-build grid cells
+  for (let i = 1; i <= numPages; i++){
+    const cell = document.createElement('div');
+    cell.className = 'page-cell pending';
+    cell.textContent = i;
+    cell.id = 'cell-' + i;
+    pagesGrid.appendChild(cell);
+  }
+
+  for (let i = 1; i <= numPages; i++){
+    progressText.textContent = `Memproses halaman ${i}/${numPages}`;
+    progressFill.style.width = ((i / numPages) * 100) + '%';
+
+    try {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 1 });
+      const targetWidth = 500;
+      const scale = targetWidth / viewport.width;
+      const scaledViewport = page.getViewport({ scale });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(scaledViewport.width);
+      canvas.height = Math.ceil(scaledViewport.height);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+      await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let colored = 0, sampled = 0;
+      const stride = 3; // sample every 3rd pixel in each dimension for speed
+      const w = canvas.width, h = canvas.height;
+
+      for (let y = 0; y < h; y += stride){
+        for (let x = 0; x < w; x += stride){
+          const idx = (y * w + x) * 4;
+          const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
+          const diff = Math.max(r,g,b) - Math.min(r,g,b);
+          if (diff > sens.pixelDiff) colored++;
+          sampled++;
+        }
+      }
+
+      const ratio = sampled > 0 ? colored / sampled : 0;
+      const isColor = ratio > sens.ratio;
+      const thumb = canvas.toDataURL('image/jpeg', 0.72);
+      results[i-1] = { page: i, isColor, ratio, thumb, manualOverride: null };
+
+      const cell = document.getElementById('cell-' + i);
+      cell.classList.remove('pending');
+      cell.classList.add(isColor ? 'color' : 'bw');
+      cell.title = `Halaman ${i} — ${isColor ? 'Berwarna' : 'Hitam putih'} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
+      cell.addEventListener('click', () => openPreview(i));
+
+      // release page resources
+      page.cleanup();
+    } catch (err) {
+      results[i-1] = { page: i, isColor: false, ratio: 0, thumb: null, manualOverride: null, error: true };
+    }
+
+    // yield to keep UI responsive
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  progressWrap.classList.remove('active');
+  renderSummary();
+}
+
+function renderSummary(){
+  const total = results.length;
+  const colorCount = results.filter(effectiveIsColor).length;
+  const bwCount = total - colorCount;
+
+  statTotal.textContent = total;
+  statColor.textContent = colorCount;
+  statBW.textContent = bwCount;
+
+  resultsCard.style.display = 'block';
+  updateCalc();
+}
+
+function updateCalc(){
+  const priceBW = parseFloat(priceBWInput.value) || 0;
+  const priceColor = parseFloat(priceColorInput.value) || 0;
+  const colorCount = results.filter(effectiveIsColor).length;
+  const bwCount = results.length - colorCount;
+  const correctedCount = results.filter(r => r.manualOverride !== null && r.manualOverride !== undefined).length;
+
+  const total = (bwCount * priceBW) + (colorCount * priceColor);
+  calcTotal.textContent = 'Rp ' + total.toLocaleString('id-ID');
+  calcBreakdown.textContent = `${bwCount} hal. BW × Rp ${priceBW.toLocaleString('id-ID')} + ${colorCount} hal. warna × Rp ${priceColor.toLocaleString('id-ID')}`
+    + (correctedCount > 0 ? ` — ${correctedCount} halaman dikoreksi manual` : '');
+
+  statColor.textContent = colorCount;
+  statBW.textContent = bwCount;
+}
+
+function openPreview(pageNum){
+  const r = results[pageNum - 1];
+  if (!r) return;
+  activePreviewPage = pageNum;
+
+  modalTitle.textContent = 'Halaman ' + pageNum;
+  modalImg.src = r.thumb || '';
+  const isColor = effectiveIsColor(r);
+
+  modalStatus.className = 'modal-status ' + (isColor ? 'is-color' : 'is-bw');
+  modalStatusText.textContent = isColor ? 'Terdeteksi berwarna' : 'Terdeteksi hitam putih';
+  modalStatusPct.textContent = (r.ratio*100).toFixed(2) + '% area berwarna';
+
+  const corrected = r.manualOverride !== null && r.manualOverride !== undefined;
+  modalNote.textContent = corrected
+    ? `Status sudah dikoreksi manual dari hasil deteksi otomatis (${r.isColor ? 'berwarna' : 'hitam putih'}).`
+    : 'Jika halaman ini sebenarnya sedikit berwarna (misal ada aksen atau logo kecil) tapi terdeteksi hitam putih, atau sebaliknya, kamu bisa koreksi manual di sini.';
+
+  modalToggleBtn.textContent = isColor ? 'Tandai sebagai Hitam Putih' : 'Tandai sebagai Berwarna';
+
+  modalOverlay.classList.add('active');
+}
+
+function closePreview(){
+  modalOverlay.classList.remove('active');
+  activePreviewPage = null;
+}
+
+modalClose.addEventListener('click', closePreview);
+modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closePreview(); });
+
+modalToggleBtn.addEventListener('click', () => {
+  if (activePreviewPage === null) return;
+  const r = results[activePreviewPage - 1];
+  const currentEffective = effectiveIsColor(r);
+  r.manualOverride = !currentEffective;
+
+  const cell = document.getElementById('cell-' + activePreviewPage);
+  cell.classList.remove('color', 'bw');
+  cell.classList.add(r.manualOverride ? 'color' : 'bw');
+  cell.classList.toggle('corrected', r.manualOverride !== r.isColor);
+  cell.title = `Halaman ${activePreviewPage} — ${r.manualOverride ? 'Berwarna' : 'Hitam putih'} (dikoreksi manual) — klik untuk preview`;
+
+  renderSummary();
+  openPreview(activePreviewPage); // refresh modal content to reflect new state
+});
+
+priceBWInput.addEventListener('input', updateCalc);
+priceColorInput.addEventListener('input', updateCalc);
+
+exportBtn.addEventListener('click', () => {
+  let csv = 'Halaman,Status,Persentase Warna,Dikoreksi Manual\n';
+  results.forEach(r => {
+    const status = effectiveIsColor(r) ? 'Berwarna' : 'Hitam Putih';
+    const corrected = (r.manualOverride !== null && r.manualOverride !== undefined) ? 'Ya' : 'Tidak';
+    csv += `${r.page},${status},${(r.ratio*100).toFixed(2)}%,${corrected}\n`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'hasil-deteksi-warna.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+resetBtn.addEventListener('click', () => {
+  results = [];
+  closePreview();
+  resultsCard.style.display = 'none';
+  filenameEl.textContent = '';
+  errorEl.textContent = '';
+  fileInput.value = '';
+  pagesGrid.innerHTML = '';
+});
+</script>
+</body>
+</html>
