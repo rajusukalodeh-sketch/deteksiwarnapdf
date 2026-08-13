@@ -1,11 +1,8 @@
 const _pdfWorkerBlob = new Blob([window.PDFJS_WORKER_SOURCE], { type: 'application/javascript' });
 pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(_pdfWorkerBlob);
 
-const SENSITIVITY = {
-  low:    { pixelDiff: 30, ratio: 0.02 },
-  medium: { pixelDiff: 20, ratio: 0.003 },
-  high:   { pixelDiff: 12, ratio: 0.0005 }
-};
+const PIXEL_DIFF_THRESHOLD = 20;
+const CATEGORY_LABEL = { bw: 'Hitam Putih', color: 'Warna', full: 'Full Warna' };
 
 const uploader = document.getElementById('uploader');
 const fileInput = document.getElementById('fileInput');
@@ -16,14 +13,19 @@ const progressText = document.getElementById('progressText');
 const progressFill = document.getElementById('progressFill');
 const resultsCard = document.getElementById('resultsCard');
 const statTotal = document.getElementById('statTotal');
-const statColor = document.getElementById('statColor');
 const statBW = document.getElementById('statBW');
+const statColor = document.getElementById('statColor');
+const statFull = document.getElementById('statFull');
 const pagesGrid = document.getElementById('pagesGrid');
 const priceBWInput = document.getElementById('priceBW');
 const priceColorInput = document.getElementById('priceColor');
+const priceFullInput = document.getElementById('priceFull');
 const calcTotal = document.getElementById('calcTotal');
 const calcBreakdown = document.getElementById('calcBreakdown');
-const sensitivitySelect = document.getElementById('sensitivity');
+const tier1Input = document.getElementById('tier1');
+const tier2Input = document.getElementById('tier2');
+const tierRanges = document.getElementById('tierRanges');
+const tierError = document.getElementById('tierError');
 const exportBtn = document.getElementById('exportBtn');
 const resetBtn = document.getElementById('resetBtn');
 const modalOverlay = document.getElementById('modalOverlay');
@@ -34,16 +36,65 @@ const modalStatus = document.getElementById('modalStatus');
 const modalStatusText = document.getElementById('modalStatusText');
 const modalStatusPct = document.getElementById('modalStatusPct');
 const modalNote = document.getElementById('modalNote');
-const modalToggleBtn = document.getElementById('modalToggleBtn');
+const catButtons = [document.getElementById('btnCatBW'), document.getElementById('btnCatColor'), document.getElementById('btnCatFull')];
 
-let results = []; // { page, isColor, ratio, thumb, manualOverride }
+let results = [];
 let activePreviewPage = null;
 
-function effectiveIsColor(r){
-  return (r.manualOverride === null || r.manualOverride === undefined) ? r.isColor : r.manualOverride;
+function getTiers(){
+  let t1 = parseFloat(tier1Input.value);
+  let t2 = parseFloat(tier2Input.value);
+  if (isNaN(t1)) t1 = 10;
+  if (isNaN(t2)) t2 = 20;
+  return { t1, t2 };
 }
 
+function classify(ratioPercent, t1, t2){
+  if (ratioPercent < t1) return 'bw';
+  if (ratioPercent < t2) return 'color';
+  return 'full';
+}
+
+function effectiveCategory(r){
+  return r.manualOverride || r.category;
+}
+
+function updateTierUI(){
+  const { t1, t2 } = getTiers();
+  const valid = t1 < t2;
+  tierError.classList.toggle('active', !valid);
+  tierRanges.innerHTML = `
+    <span class="r"><span class="swatch bw"></span><b>Hitam Putih</b>&nbsp;0%–${t1}%</span>
+    <span class="r"><span class="swatch color"></span><b>Warna</b>&nbsp;${t1}%–${t2}%</span>
+    <span class="r"><span class="swatch full"></span><b>Full Warna</b>&nbsp;${t2}%–100%</span>
+  `;
+  return valid;
+}
+
+function recategorizeAll(){
+  if (!updateTierUI()) return;
+  if (results.length === 0) return;
+  const { t1, t2 } = getTiers();
+  results.forEach(r => {
+    if (r.error) return;
+    r.category = classify(r.ratio * 100, t1, t2);
+    const cell = document.getElementById('cell-' + r.page);
+    if (!cell) return;
+    const eff = effectiveCategory(r);
+    cell.classList.remove('bw', 'color', 'full');
+    cell.classList.add(eff);
+    cell.classList.toggle('corrected', !!r.manualOverride && r.manualOverride !== r.category);
+    cell.title = `Halaman ${r.page} — ${CATEGORY_LABEL[eff]} (${(r.ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
+  });
+  renderSummary();
+}
+
+tier1Input.addEventListener('input', recategorizeAll);
+tier2Input.addEventListener('input', recategorizeAll);
+updateTierUI();
+
 uploader.addEventListener('click', () => fileInput.click());
+uploader.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
 uploader.addEventListener('dragover', e => { e.preventDefault(); uploader.classList.add('drag'); });
 uploader.addEventListener('dragleave', () => uploader.classList.remove('drag'));
 uploader.addEventListener('drop', e => {
@@ -71,9 +122,14 @@ function handleFile(file){
 }
 
 async function processPDF(arrayBuffer){
+  if (!updateTierUI()){
+    errorEl.textContent = 'Perbaiki dulu batas kategori sebelum memproses PDF.';
+    return;
+  }
+  const { t1, t2 } = getTiers();
+
   progressWrap.classList.add('active');
   pagesGrid.innerHTML = '';
-  const sens = SENSITIVITY[sensitivitySelect.value];
 
   let pdf;
   try {
@@ -87,7 +143,6 @@ async function processPDF(arrayBuffer){
   const numPages = pdf.numPages;
   results = new Array(numPages);
 
-  // pre-build grid cells
   for (let i = 1; i <= numPages; i++){
     const cell = document.createElement('div');
     cell.className = 'page-cell pending';
@@ -116,7 +171,7 @@ async function processPDF(arrayBuffer){
 
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
       let colored = 0, sampled = 0;
-      const stride = 3; // sample every 3rd pixel in each dimension for speed
+      const stride = 3;
       const w = canvas.width, h = canvas.height;
 
       for (let y = 0; y < h; y += stride){
@@ -124,29 +179,27 @@ async function processPDF(arrayBuffer){
           const idx = (y * w + x) * 4;
           const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
           const diff = Math.max(r,g,b) - Math.min(r,g,b);
-          if (diff > sens.pixelDiff) colored++;
+          if (diff > PIXEL_DIFF_THRESHOLD) colored++;
           sampled++;
         }
       }
 
       const ratio = sampled > 0 ? colored / sampled : 0;
-      const isColor = ratio > sens.ratio;
+      const category = classify(ratio * 100, t1, t2);
       const thumb = canvas.toDataURL('image/jpeg', 0.72);
-      results[i-1] = { page: i, isColor, ratio, thumb, manualOverride: null };
+      results[i-1] = { page: i, ratio, category, thumb, manualOverride: null };
 
       const cell = document.getElementById('cell-' + i);
       cell.classList.remove('pending');
-      cell.classList.add(isColor ? 'color' : 'bw');
-      cell.title = `Halaman ${i} — ${isColor ? 'Berwarna' : 'Hitam putih'} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
+      cell.classList.add(category);
+      cell.title = `Halaman ${i} — ${CATEGORY_LABEL[category]} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
       cell.addEventListener('click', () => openPreview(i));
 
-      // release page resources
       page.cleanup();
     } catch (err) {
-      results[i-1] = { page: i, isColor: false, ratio: 0, thumb: null, manualOverride: null, error: true };
+      results[i-1] = { page: i, ratio: 0, category: 'bw', thumb: null, manualOverride: null, error: true };
     }
 
-    // yield to keep UI responsive
     await new Promise(r => setTimeout(r, 0));
   }
 
@@ -156,12 +209,14 @@ async function processPDF(arrayBuffer){
 
 function renderSummary(){
   const total = results.length;
-  const colorCount = results.filter(effectiveIsColor).length;
-  const bwCount = total - colorCount;
+  const bwCount = results.filter(r => effectiveCategory(r) === 'bw').length;
+  const colorCount = results.filter(r => effectiveCategory(r) === 'color').length;
+  const fullCount = results.filter(r => effectiveCategory(r) === 'full').length;
 
   statTotal.textContent = total;
-  statColor.textContent = colorCount;
   statBW.textContent = bwCount;
+  statColor.textContent = colorCount;
+  statFull.textContent = fullCount;
 
   resultsCard.style.display = 'block';
   updateCalc();
@@ -170,17 +225,16 @@ function renderSummary(){
 function updateCalc(){
   const priceBW = parseFloat(priceBWInput.value) || 0;
   const priceColor = parseFloat(priceColorInput.value) || 0;
-  const colorCount = results.filter(effectiveIsColor).length;
-  const bwCount = results.length - colorCount;
-  const correctedCount = results.filter(r => r.manualOverride !== null && r.manualOverride !== undefined).length;
+  const priceFull = parseFloat(priceFullInput.value) || 0;
+  const bwCount = results.filter(r => effectiveCategory(r) === 'bw').length;
+  const colorCount = results.filter(r => effectiveCategory(r) === 'color').length;
+  const fullCount = results.filter(r => effectiveCategory(r) === 'full').length;
+  const correctedCount = results.filter(r => !!r.manualOverride).length;
 
-  const total = (bwCount * priceBW) + (colorCount * priceColor);
+  const total = (bwCount * priceBW) + (colorCount * priceColor) + (fullCount * priceFull);
   calcTotal.textContent = 'Rp ' + total.toLocaleString('id-ID');
-  calcBreakdown.textContent = `${bwCount} hal. BW × Rp ${priceBW.toLocaleString('id-ID')} + ${colorCount} hal. warna × Rp ${priceColor.toLocaleString('id-ID')}`
-    + (correctedCount > 0 ? ` — ${correctedCount} halaman dikoreksi manual` : '');
-
-  statColor.textContent = colorCount;
-  statBW.textContent = bwCount;
+  calcBreakdown.textContent = `${bwCount} hal. Hitam Putih × Rp ${priceBW.toLocaleString('id-ID')}  +  ${colorCount} hal. Warna × Rp ${priceColor.toLocaleString('id-ID')}  +  ${fullCount} hal. Full Warna × Rp ${priceFull.toLocaleString('id-ID')}`
+    + (correctedCount > 0 ? `  —  ${correctedCount} halaman dikoreksi manual` : '');
 }
 
 function openPreview(pageNum){
@@ -190,19 +244,18 @@ function openPreview(pageNum){
 
   modalTitle.textContent = 'Halaman ' + pageNum;
   modalImg.src = r.thumb || '';
-  const isColor = effectiveIsColor(r);
+  const eff = effectiveCategory(r);
 
-  modalStatus.className = 'modal-status ' + (isColor ? 'is-color' : 'is-bw');
-  modalStatusText.textContent = isColor ? 'Terdeteksi berwarna' : 'Terdeteksi hitam putih';
+  modalStatus.className = 'modal-status is-' + eff;
+  modalStatusText.textContent = 'Terdeteksi: ' + CATEGORY_LABEL[eff];
   modalStatusPct.textContent = (r.ratio*100).toFixed(2) + '% area berwarna';
 
-  const corrected = r.manualOverride !== null && r.manualOverride !== undefined;
+  const corrected = !!r.manualOverride;
   modalNote.textContent = corrected
-    ? `Status sudah dikoreksi manual dari hasil deteksi otomatis (${r.isColor ? 'berwarna' : 'hitam putih'}).`
-    : 'Jika halaman ini sebenarnya sedikit berwarna (misal ada aksen atau logo kecil) tapi terdeteksi hitam putih, atau sebaliknya, kamu bisa koreksi manual di sini.';
+    ? `Kategori sudah dikoreksi manual dari hasil deteksi otomatis (${CATEGORY_LABEL[r.category]}).`
+    : 'Kalau kategori otomatis kurang tepat, pilih kategori yang benar di bawah ini.';
 
-  modalToggleBtn.textContent = isColor ? 'Tandai sebagai Hitam Putih' : 'Tandai sebagai Berwarna';
-
+  catButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.cat === eff));
   modalOverlay.classList.add('active');
 }
 
@@ -213,32 +266,37 @@ function closePreview(){
 
 modalClose.addEventListener('click', closePreview);
 modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closePreview(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePreview(); });
 
-modalToggleBtn.addEventListener('click', () => {
-  if (activePreviewPage === null) return;
-  const r = results[activePreviewPage - 1];
-  const currentEffective = effectiveIsColor(r);
-  r.manualOverride = !currentEffective;
+catButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (activePreviewPage === null) return;
+    const r = results[activePreviewPage - 1];
+    const chosen = btn.dataset.cat;
+    r.manualOverride = (chosen === r.category) ? null : chosen;
 
-  const cell = document.getElementById('cell-' + activePreviewPage);
-  cell.classList.remove('color', 'bw');
-  cell.classList.add(r.manualOverride ? 'color' : 'bw');
-  cell.classList.toggle('corrected', r.manualOverride !== r.isColor);
-  cell.title = `Halaman ${activePreviewPage} — ${r.manualOverride ? 'Berwarna' : 'Hitam putih'} (dikoreksi manual) — klik untuk preview`;
+    const cell = document.getElementById('cell-' + activePreviewPage);
+    const eff = effectiveCategory(r);
+    cell.classList.remove('bw', 'color', 'full');
+    cell.classList.add(eff);
+    cell.classList.toggle('corrected', !!r.manualOverride);
+    cell.title = `Halaman ${activePreviewPage} — ${CATEGORY_LABEL[eff]}${r.manualOverride ? ' (dikoreksi manual)' : ''} — klik untuk preview`;
 
-  renderSummary();
-  openPreview(activePreviewPage); // refresh modal content to reflect new state
+    renderSummary();
+    openPreview(activePreviewPage);
+  });
 });
 
 priceBWInput.addEventListener('input', updateCalc);
 priceColorInput.addEventListener('input', updateCalc);
+priceFullInput.addEventListener('input', updateCalc);
 
 exportBtn.addEventListener('click', () => {
-  let csv = 'Halaman,Status,Persentase Warna,Dikoreksi Manual\n';
+  let csv = 'Halaman,Kategori,Persentase Warna,Dikoreksi Manual\n';
   results.forEach(r => {
-    const status = effectiveIsColor(r) ? 'Berwarna' : 'Hitam Putih';
-    const corrected = (r.manualOverride !== null && r.manualOverride !== undefined) ? 'Ya' : 'Tidak';
-    csv += `${r.page},${status},${(r.ratio*100).toFixed(2)}%,${corrected}\n`;
+    const cat = CATEGORY_LABEL[effectiveCategory(r)];
+    const corrected = r.manualOverride ? 'Ya' : 'Tidak';
+    csv += `${r.page},${cat},${(r.ratio*100).toFixed(2)}%,${corrected}\n`;
   });
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

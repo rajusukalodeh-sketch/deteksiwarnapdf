@@ -13,41 +13,36 @@
     <div>
       <div class="docket-title">Periksa Warna Cetak</div>
       <div class="docket-sub">Deteksi halaman berwarna &amp; estimasi biaya cetak</div>
-      <div class="colorbar">
-        <span style="background:var(--cyan)"></span>
-        <span style="background:var(--magenta)"></span>
-        <span style="background:var(--yellow)"></span>
-        <span style="background:var(--ink)"></span>
-        <span style="background:#8a8778"></span>
-        <span style="background:#c9c6bb"></span>
-      </div>
     </div>
     <svg class="regmark" viewBox="0 0 60 60">
       <circle cx="30" cy="28" r="14" fill="none" stroke="#00AEEF" stroke-width="1.3" opacity="0.9"/>
       <circle cx="32" cy="30" r="14" fill="none" stroke="#EC008C" stroke-width="1.3" opacity="0.9"/>
       <circle cx="28" cy="30" r="14" fill="none" stroke="#F2C400" stroke-width="1.3" opacity="0.9"/>
-      <line x1="30" y1="8" x2="30" y2="52" stroke="#EDEBE3" stroke-width="1"/>
-      <line x1="8" y1="30" x2="52" y2="30" stroke="#EDEBE3" stroke-width="1"/>
+      <line x1="30" y1="8" x2="30" y2="52" stroke="#EFEDE7" stroke-width="1"/>
+      <line x1="8" y1="30" x2="52" y2="30" stroke="#EFEDE7" stroke-width="1"/>
     </svg>
   </div>
 
   <div class="card">
-    <div class="uploader" id="uploader">
+    <div class="section-label">Unggah PDF</div>
+    <div class="uploader" id="uploader" tabindex="0">
       <input type="file" id="fileInput" accept="application/pdf">
       <div class="uploader-label">Klik atau seret file PDF ke sini</div>
       <div class="uploader-hint">Diproses langsung di browser — file tidak diunggah ke server mana pun</div>
     </div>
 
-    <div class="row" style="margin-top:16px;">
+    <div class="tier-grid">
       <div>
-        <span class="field-label">Sensitivitas deteksi</span>
-        <select id="sensitivity">
-          <option value="low">Rendah — hanya warna dominan</option>
-          <option value="medium" selected>Sedang — disarankan</option>
-          <option value="high">Tinggi — tangkap logo/aksen kecil</option>
-        </select>
+        <span class="field-label">Batas atas Hitam Putih (%)</span>
+        <input type="number" id="tier1" value="10" min="0" max="100" step="1">
+      </div>
+      <div>
+        <span class="field-label">Batas atas Warna (%)</span>
+        <input type="number" id="tier2" value="20" min="0" max="100" step="1">
       </div>
     </div>
+    <div class="tier-ranges" id="tierRanges"></div>
+    <div class="tier-error" id="tierError">Batas atas Hitam Putih harus lebih kecil dari batas atas Warna.</div>
 
     <div class="filename" id="filename"></div>
     <div class="error" id="error"></div>
@@ -59,40 +54,47 @@
   </div>
 
   <div class="card" id="resultsCard" style="display:none;">
+    <div class="section-label">Ringkasan</div>
     <div class="summary-grid">
       <div class="stat"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Total halaman</div></div>
-      <div class="stat color"><div class="stat-num" id="statColor">0</div><div class="stat-label">Halaman berwarna</div></div>
-      <div class="stat bw"><div class="stat-num" id="statBW">0</div><div class="stat-label">Halaman hitam putih</div></div>
+      <div class="stat bw"><div class="stat-num" id="statBW">0</div><div class="stat-label">Hitam putih</div></div>
+      <div class="stat color"><div class="stat-num" id="statColor">0</div><div class="stat-label">Warna</div></div>
+      <div class="stat full"><div class="stat-num" id="statFull">0</div><div class="stat-label">Full warna</div></div>
     </div>
 
-    <div class="calc">
-      <div class="calc-title">Estimasi Biaya Cetak</div>
-      <div class="calc-inputs">
-        <div>
-          <span class="field-label">Harga / halaman BW (Rp)</span>
-          <input type="number" id="priceBW" value="500" min="0" step="50">
-        </div>
-        <div>
-          <span class="field-label">Harga / halaman warna (Rp)</span>
-          <input type="number" id="priceColor" value="1000" min="0" step="50">
-        </div>
-      </div>
-      <div class="calc-total">
-        <div class="label">Total estimasi cetak</div>
-        <div class="value" id="calcTotal">Rp 0</div>
-      </div>
-      <div class="calc-breakdown" id="calcBreakdown"></div>
-    </div>
+    <hr class="divider">
 
-    <div style="margin-top:22px;">
-      <div class="pages-title">Peta Halaman</div>
-      <div class="pages-hint">Klik kotak untuk melihat preview halaman &amp; koreksi status jika deteksi kurang tepat</div>
-      <div class="pages-grid" id="pagesGrid"></div>
-      <div class="legend">
-        <span><span class="sw" style="background:linear-gradient(135deg,var(--cyan),var(--magenta),var(--yellow))"></span>Berwarna</span>
-        <span><span class="sw" style="background:var(--gray-bw)"></span>Hitam putih</span>
-        <span><span class="dot"></span>Dikoreksi manual</span>
+    <div class="section-label">Estimasi Biaya Cetak</div>
+    <div class="calc-inputs">
+      <div>
+        <span class="field-label">Harga / hal. Hitam Putih (Rp)</span>
+        <input type="number" id="priceBW" value="500" min="0" step="50">
       </div>
+      <div>
+        <span class="field-label">Harga / hal. Warna (Rp)</span>
+        <input type="number" id="priceColor" value="1000" min="0" step="50">
+      </div>
+      <div>
+        <span class="field-label">Harga / hal. Full Warna (Rp)</span>
+        <input type="number" id="priceFull" value="1500" min="0" step="50">
+      </div>
+    </div>
+    <div class="calc-total">
+      <div class="label">Total estimasi cetak</div>
+      <div class="value" id="calcTotal">Rp 0</div>
+    </div>
+    <div class="calc-breakdown" id="calcBreakdown"></div>
+
+    <hr class="divider">
+
+    <div class="section-label">Peta Halaman</div>
+    <div class="pages-hint">Klik kotak untuk melihat preview halaman &amp; koreksi kategori jika deteksi kurang tepat</div>
+    <div class="pages-grid" id="pagesGrid"></div>
+    <div class="legend">
+      <span class="item"><span class="swatch bw"></span>Hitam putih</span>
+      <span class="item"><span class="swatch color"></span>Warna</span>
+      <span class="item"><span class="swatch full"></span>Full warna</span>
+      <span class="item"><span class="dot-marker"></span>Dikoreksi manual</span>
     </div>
 
     <div class="actions">
@@ -107,7 +109,7 @@
   <div class="modal">
     <div class="modal-head">
       <div class="title" id="modalTitle">Halaman</div>
-      <button class="modal-close" id="modalClose">&times;</button>
+      <button class="modal-close" id="modalClose" aria-label="Tutup">&times;</button>
     </div>
     <div class="modal-img-wrap"><img id="modalImg" alt="Preview halaman"></div>
     <div class="modal-body">
@@ -116,7 +118,12 @@
         <span id="modalStatusPct">—</span>
       </div>
       <div class="modal-note" id="modalNote"></div>
-      <button class="btn modal-toggle-btn" id="modalToggleBtn"></button>
+      <div class="modal-cat-label">Koreksi kategori manual</div>
+      <div class="modal-cat-buttons">
+        <button class="modal-cat-btn" id="btnCatBW" data-cat="bw">Hitam Putih</button>
+        <button class="modal-cat-btn" id="btnCatColor" data-cat="color">Warna</button>
+        <button class="modal-cat-btn" id="btnCatFull" data-cat="full">Full Warna</button>
+      </div>
     </div>
   </div>
 </div>
