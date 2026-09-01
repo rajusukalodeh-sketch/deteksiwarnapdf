@@ -23,85 +23,80 @@
     </svg>
   </div>
 
+  <!-- Upload -->
   <div class="card">
-    <div class="section-label">Unggah PDF</div>
+    <div class="section-label">Unggah PDF (bisa lebih dari satu file)</div>
     <div class="uploader" id="uploader" tabindex="0">
-      <input type="file" id="fileInput" accept="application/pdf">
-      <div class="uploader-label">Klik atau seret file PDF ke sini</div>
+      <input type="file" id="fileInput" accept="application/pdf" multiple>
+      <div class="uploader-label">Klik atau seret satu / beberapa file PDF ke sini</div>
       <div class="uploader-hint">Diproses langsung di browser — file tidak diunggah ke server mana pun</div>
     </div>
 
     <div class="tier-grid">
       <div>
         <span class="field-label">Batas atas Hitam Putih (%)</span>
-        <input type="number" id="tier1" value="10" min="0" max="100" step="1">
+        <input type="number" id="tier1" value="20" min="0" max="100" step="1">
       </div>
       <div>
         <span class="field-label">Batas atas Warna (%)</span>
-        <input type="number" id="tier2" value="20" min="0" max="100" step="1">
+        <input type="number" id="tier2" value="60" min="0" max="100" step="1">
+      </div>
+      <div>
+        <span class="field-label">Batas atas Full Warna (%)</span>
+        <input type="number" id="tier3" value="90" min="0" max="100" step="1">
       </div>
     </div>
     <div class="tier-ranges" id="tierRanges"></div>
-    <div class="tier-error" id="tierError">Batas atas Hitam Putih harus lebih kecil dari batas atas Warna.</div>
+    <div class="tier-error" id="tierError">Urutan batas harus: Hitam Putih &lt; Warna &lt; Full Warna &lt; 100.</div>
 
-    <div class="filename" id="filename"></div>
+    <div class="filelist" id="filelist"></div>
     <div class="error" id="error"></div>
 
     <div class="progress-wrap" id="progressWrap">
-      <div class="progress-text" id="progressText">Memproses halaman 0/0</div>
+      <div class="progress-text" id="progressText">Memproses...</div>
       <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
     </div>
   </div>
 
-  <div class="card" id="resultsCard" style="display:none;">
-    <div class="section-label">Ringkasan</div>
-    <div class="summary-grid">
-      <div class="stat"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Total halaman</div></div>
-      <div class="stat bw"><div class="stat-num" id="statBW">0</div><div class="stat-label">Hitam putih</div></div>
-      <div class="stat color"><div class="stat-num" id="statColor">0</div><div class="stat-label">Warna</div></div>
-      <div class="stat full"><div class="stat-num" id="statFull">0</div><div class="stat-label">Full warna</div></div>
+  <!-- Price table (locked by default) -->
+  <div class="card">
+    <div class="section-label">
+      <span>Tabel Harga Cetak</span>
+      <button class="btn-link" id="priceLockToggle">Ubah Harga</button>
     </div>
-
-    <hr class="divider">
-
-    <div class="section-label">Estimasi Biaya Cetak</div>
-    <div class="calc-inputs">
-      <div>
-        <span class="field-label">Harga / hal. Hitam Putih (Rp)</span>
-        <input type="number" id="priceBW" value="500" min="0" step="50">
-      </div>
-      <div>
-        <span class="field-label">Harga / hal. Warna (Rp)</span>
-        <input type="number" id="priceColor" value="1000" min="0" step="50">
-      </div>
-      <div>
-        <span class="field-label">Harga / hal. Full Warna (Rp)</span>
-        <input type="number" id="priceFull" value="1500" min="0" step="50">
-      </div>
-    </div>
-    <div class="calc-total">
-      <div class="label">Total estimasi cetak</div>
-      <div class="value" id="calcTotal">Rp 0</div>
-    </div>
-    <div class="calc-breakdown" id="calcBreakdown"></div>
-
-    <hr class="divider">
-
-    <div class="section-label">Peta Halaman</div>
-    <div class="pages-hint">Klik kotak untuk melihat preview halaman &amp; koreksi kategori jika deteksi kurang tepat</div>
-    <div class="pages-grid" id="pagesGrid"></div>
-    <div class="legend">
-      <span class="item"><span class="swatch bw"></span>Hitam putih</span>
-      <span class="item"><span class="swatch color"></span>Warna</span>
-      <span class="item"><span class="swatch full"></span>Full warna</span>
-      <span class="item"><span class="dot-marker"></span>Dikoreksi manual</span>
-    </div>
-
-    <div class="actions">
-      <button class="btn" id="exportBtn">Unduh hasil (CSV)</button>
-      <button class="btn secondary" id="resetBtn">Periksa PDF lain</button>
+    <table class="price-table">
+      <thead>
+        <tr>
+          <th>Kategori</th>
+          <th>Harga Normal /lbr</th>
+          <th>Harga Diskon /lbr</th>
+          <th>Min. Lembar utk Diskon</th>
+        </tr>
+      </thead>
+      <tbody id="priceTableBody"></tbody>
+    </table>
+    <div class="price-lock-note" id="priceLockNote">
+      Harga terkunci (readonly). Klik "Ubah Harga" untuk menyesuaikan, lalu simpan untuk mengunci kembali.
+      Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum.
     </div>
   </div>
+
+  <!-- Grand total across all uploaded documents -->
+  <div class="card" id="grandCard" style="display:none;">
+    <div class="section-label">Total Keseluruhan (Semua Dokumen)</div>
+    <div class="grand-total">
+      <div class="label">Total estimasi cetak</div>
+      <div class="value" id="grandTotalValue">Rp 0</div>
+    </div>
+    <div class="grand-breakdown" id="grandBreakdown"></div>
+    <div class="doc-actions">
+      <button class="btn small" id="exportPdfBtn">Unduh Laporan Gabungan (PDF)</button>
+      <button class="btn small secondary" id="exportPngBtn">Unduh Laporan Gabungan (PNG)</button>
+    </div>
+  </div>
+
+  <!-- Per-document result cards get appended here -->
+  <div id="documentsContainer"></div>
 
 </div>
 
@@ -120,9 +115,10 @@
       <div class="modal-note" id="modalNote"></div>
       <div class="modal-cat-label">Koreksi kategori manual</div>
       <div class="modal-cat-buttons">
-        <button class="modal-cat-btn" id="btnCatBW" data-cat="bw">Hitam Putih</button>
-        <button class="modal-cat-btn" id="btnCatColor" data-cat="color">Warna</button>
-        <button class="modal-cat-btn" id="btnCatFull" data-cat="full">Full Warna</button>
+        <button class="modal-cat-btn" data-cat="bw">Hitam Putih</button>
+        <button class="modal-cat-btn" data-cat="color">Warna</button>
+        <button class="modal-cat-btn" data-cat="full">Full Warna</button>
+        <button class="modal-cat-btn" data-cat="block">Block Warna</button>
       </div>
     </div>
   </div>
@@ -130,6 +126,8 @@
 
 <script src="assets/pdf.min.js"></script>
 <script src="assets/pdf-worker-source.js"></script>
+<script src="assets/jspdf.umd.min.js"></script>
+<script src="assets/html2canvas.min.js"></script>
 <script src="assets/app.js"></script>
 </body>
 </html>
