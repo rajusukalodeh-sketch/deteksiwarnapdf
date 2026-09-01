@@ -29,25 +29,10 @@
     <div class="uploader" id="uploader" tabindex="0">
       <input type="file" id="fileInput" accept="application/pdf" multiple>
       <div class="uploader-label">Klik atau seret satu / beberapa file PDF ke sini</div>
-      <div class="uploader-hint"><b>Diproses langsung di browser — file tidak diunggah ke server mana pun</b></div>
+      <div class="uploader-hint">Diproses langsung di browser — file tidak diunggah ke server mana pun</div>
     </div>
 
-    <div class="tier-grid">
-      <div>
-        <span class="field-label">Batas atas Hitam Putih (%)</span>
-        <input type="number" id="tier1" value="20" min="0" max="100" step="1">
-      </div>
-      <div>
-        <span class="field-label">Batas atas Warna (%)</span>
-        <input type="number" id="tier2" value="60" min="0" max="100" step="1">
-      </div>
-      <div>
-        <span class="field-label">Batas atas Full Warna (%)</span>
-        <input type="number" id="tier3" value="90" min="0" max="100" step="1">
-      </div>
-    </div>
     <div class="tier-ranges" id="tierRanges"></div>
-    <div class="tier-error" id="tierError">Urutan batas harus: Hitam Putih &lt; Warna &lt; Full Warna &lt; 100.</div>
 
     <div class="filelist" id="filelist"></div>
     <div class="error" id="error"></div>
@@ -58,33 +43,16 @@
     </div>
   </div>
 
-  <!-- Price table (locked by default) -->
-  <div class="card">
-    <div class="section-label">
-      <span>Tabel Harga Cetak</span>
-      <button class="btn-link" id="priceLockToggle">Ubah Harga</button>
-    </div>
-    <table class="price-table">
-      <thead>
-        <tr>
-          <th>Kategori</th>
-          <th>Harga Normal /lbr</th>
-          <th>Harga Diskon /lbr</th>
-          <th>Min. Lembar utk Diskon</th>
-        </tr>
-      </thead>
-      <tbody id="priceTableBody"></tbody>
-    </table>
-    <div class="price-lock-note" id="priceLockNote">
-      Harga terkunci (readonly). Klik "Ubah Harga" untuk menyesuaikan, lalu simpan untuk mengunci kembali.
-      Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum.
-    </div>
-  </div>
-
   <!-- Grand total across all uploaded documents -->
   <div class="card" id="grandCard" style="display:none;">
     <div class="section-label">Total Keseluruhan (Semua Dokumen)</div>
-    <div class="grand-total">
+
+    <div>
+      <span class="field-label">Jumlah Cetak (rangkap)</span>
+      <input type="number" id="printQty" value="1" min="1" step="1" style="max-width:140px;">
+    </div>
+
+    <div class="grand-total" style="margin-top:16px;">
       <div class="label">Total estimasi cetak</div>
       <div class="value" id="grandTotalValue">Rp 0</div>
     </div>
@@ -98,6 +66,48 @@
   <!-- Per-document result cards get appended here -->
   <div id="documentsContainer"></div>
 
+
+  <!-- Price table + category thresholds (locked by default) -->
+  <div class="card">
+    <div class="section-label">
+      <span>Tabel Harga &amp; Batas Kategori</span>
+      <button class="btn-link" id="priceLockToggle">Ubah Pengaturan</button>
+    </div>
+
+    <div class="field-label" style="margin-bottom:10px;">Batas kategori berdasarkan persentase area berwarna per halaman</div>
+    <div class="tier-grid">
+      <div>
+        <span class="field-label">Batas atas Hitam Putih (%)</span>
+        <input type="number" id="tier1" value="20" min="0" max="100" step="1" disabled>
+      </div>
+      <div>
+        <span class="field-label">Batas atas Warna (%)</span>
+        <input type="number" id="tier2" value="60" min="0" max="100" step="1" disabled>
+      </div>
+      <div>
+        <span class="field-label">Batas atas Full Warna (%)</span>
+        <input type="number" id="tier3" value="90" min="0" max="100" step="1" disabled>
+      </div>
+    </div>
+    <div class="tier-error" id="tierError">Urutan batas harus: Hitam Putih &lt; Warna &lt; Full Warna &lt; 100.</div>
+
+    <hr class="divider">
+    <table class="price-table">
+      <thead>
+        <tr>
+          <th>Kategori</th>
+          <th>Harga Normal /lbr</th>
+          <th>Harga Diskon /lbr</th>
+          <th>Min. Lembar utk Diskon</th>
+        </tr>
+      </thead>
+      <tbody id="priceTableBody"></tbody>
+    </table>
+    <div class="price-lock-note" id="priceLockNote">
+      Pengaturan terkunci (readonly). Klik "Ubah Pengaturan" dan masukkan password untuk menyesuaikan harga atau batas kategori, lalu simpan untuk mengunci kembali.
+      Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum.
+    </div>
+  </div>
 </div>
 
 <div class="modal-overlay" id="modalOverlay">

@@ -45,6 +45,7 @@ const grandCard = document.getElementById('grandCard');
 const grandTotalValue = document.getElementById('grandTotalValue');
 const grandBreakdown = document.getElementById('grandBreakdown');
 const documentsContainer = document.getElementById('documentsContainer');
+const printQtyInput = document.getElementById('printQty');
 const exportPdfBtn = document.getElementById('exportPdfBtn');
 const exportPngBtn = document.getElementById('exportPngBtn');
 const modalOverlay = document.getElementById('modalOverlay');
@@ -153,20 +154,23 @@ const PRICE_EDIT_PASSWORD = 'password123';
 
 priceLockToggle.addEventListener('click', () => {
   if (pricingLocked){
-    const input = prompt('Masukkan password untuk mengubah harga:');
+    const input = prompt('Masukkan password untuk mengubah harga & batas kategori:');
     if (input === null) return; // user cancelled
     if (input !== PRICE_EDIT_PASSWORD){
-      errorEl.textContent = 'Password salah. Tabel harga tetap terkunci.';
+      errorEl.textContent = 'Password salah. Pengaturan tetap terkunci.';
       return;
     }
     errorEl.textContent = '';
   }
 
   pricingLocked = !pricingLocked;
-  priceLockToggle.textContent = pricingLocked ? 'Ubah Harga' : 'Simpan & Kunci';
+  tier1Input.disabled = pricingLocked;
+  tier2Input.disabled = pricingLocked;
+  tier3Input.disabled = pricingLocked;
+  priceLockToggle.textContent = pricingLocked ? 'Ubah Pengaturan' : 'Simpan & Kunci';
   priceLockNote.textContent = pricingLocked
-    ? 'Harga terkunci (readonly). Klik "Ubah Harga" untuk menyesuaikan, lalu simpan untuk mengunci kembali. Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum.'
-    : 'Mode edit aktif — ubah angka pada tabel di atas, lalu klik "Simpan & Kunci" untuk mengunci kembali.';
+    ? 'Pengaturan terkunci (readonly). Klik "Ubah Pengaturan" dan masukkan password untuk menyesuaikan harga atau batas kategori, lalu simpan untuk mengunci kembali. Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum.'
+    : 'Mode edit aktif — ubah batas kategori &amp; angka harga di atas, lalu klik "Simpan & Kunci" untuk mengunci kembali.';
   renderPriceTable();
 });
 
@@ -199,6 +203,11 @@ function unitPrices(){
   return prices;
 }
 
+function getPrintQty(){
+  const q = parseInt(printQtyInput.value, 10);
+  return (isNaN(q) || q < 1) ? 1 : q;
+}
+
 function renderGrandTotal(){
   if (documents.length === 0){
     grandCard.style.display = 'none';
@@ -207,17 +216,25 @@ function renderGrandTotal(){
   grandCard.style.display = 'block';
   const counts = aggregateCounts();
   const prices = unitPrices();
-  let total = 0;
+  const qty = getPrintQty();
+  let subtotalOnce = 0;
   const lines = CATEGORY_ORDER.map(cat => {
     const subtotal = counts[cat] * prices[cat];
-    total += subtotal;
+    subtotalOnce += subtotal;
     const discounted = counts[cat] >= pricing[cat].minQty;
     return `${CATEGORY_LABEL[cat]}: ${counts[cat]} hal. × ${fmtRp(prices[cat])}${discounted ? ' (harga diskon)' : ''} = ${fmtRp(subtotal)}`;
   });
+  const total = subtotalOnce * qty;
   grandTotalValue.textContent = fmtRp(total);
   const totalPages = documents.reduce((s,d) => s + d.results.length, 0);
-  grandBreakdown.innerHTML = `${documents.length} dokumen, ${totalPages} halaman total<br>` + lines.join('<br>');
+  grandBreakdown.innerHTML = `${documents.length} dokumen, ${totalPages} halaman total<br>` + lines.join('<br>')
+    + (qty > 1 ? `<br><b>Subtotal 1x cetak: ${fmtRp(subtotalOnce)} → × ${qty}x cetak = ${fmtRp(total)}</b>` : '');
 }
+
+printQtyInput.addEventListener('input', () => {
+  renderGrandTotal();
+  documents.forEach(refreshDocumentUI);
+});
 
 exportPdfBtn.addEventListener('click', () => exportCombinedReport('pdf'));
 exportPngBtn.addEventListener('click', () => exportCombinedReport('png'));
@@ -422,8 +439,9 @@ function refreshDocumentUI(doc){
   card.querySelector('[data-stat="block"]').textContent = counts.block;
 
   const prices = unitPrices();
-  const subtotal = CATEGORY_ORDER.reduce((s, cat) => s + counts[cat] * prices[cat], 0);
-  card.querySelector('[data-stat="subtotal"]').textContent = fmtRp(subtotal);
+  const qty = getPrintQty();
+  const subtotal = CATEGORY_ORDER.reduce((s, cat) => s + counts[cat] * prices[cat], 0) * qty;
+  card.querySelector('[data-stat="subtotal"]').textContent = fmtRp(subtotal) + (qty > 1 ? ` (×${qty}x cetak)` : '');
 }
 
 function escapeHTML(str){
@@ -529,13 +547,16 @@ function buildCombinedReportNode(){
 
   const aggCounts = aggregateCounts();
   const prices = unitPrices();
-  const { rows: grandRows, total: grandTotal } = categoryRowsHTML(aggCounts, prices);
+  const qty = getPrintQty();
+  const { rows: grandRows, total: grandTotalOnce } = categoryRowsHTML(aggCounts, prices);
+  const grandTotal = grandTotalOnce * qty;
   const totalPages = documents.reduce((s,d) => s + d.results.length, 0);
 
   const docSections = documents.map((doc, idx) => {
     const counts = { bw: 0, color: 0, full: 0, block: 0 };
     doc.results.forEach(r => { if (r && !r.error) counts[effectiveCategory(r)]++; });
-    const { rows, total } = categoryRowsHTML(counts, prices);
+    const { rows, total: totalOnce } = categoryRowsHTML(counts, prices);
+    const total = totalOnce * qty;
     return `
       <div style="margin-top:${idx === 0 ? '10' : '30'}px;padding-top:${idx === 0 ? '0' : '20'}px;${idx > 0 ? 'border-top:1px dashed #DDD9CC;' : ''}">
         <div style="font-size:13px;font-weight:700;">${idx+1}. ${escapeHTML(doc.name)}</div>
@@ -552,7 +573,7 @@ function buildCombinedReportNode(){
           <tbody>${rows}</tbody>
         </table>
         <div style="display:flex;justify-content:flex-end;margin-top:8px;font-size:12px;font-weight:700;">
-          Subtotal dokumen: ${fmtRp(total)}
+          Subtotal dokumen (1x cetak): ${fmtRp(totalOnce)}${qty > 1 ? ` &nbsp;→&nbsp; ×${qty}x cetak = ${fmtRp(total)}` : ''}
         </div>
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;margin:16px 0 8px;color:#615E54;">Peta Halaman</div>
         <div style="display:grid;grid-template-columns:repeat(22,22px);gap:3px;">${pageMapHTML(doc)}</div>
@@ -571,9 +592,10 @@ function buildCombinedReportNode(){
 
       <div style="font-size:12px;margin-bottom:4px;"><b>Jumlah dokumen:</b> ${documents.length}</div>
       <div style="font-size:12px;margin-bottom:4px;"><b>Total halaman:</b> ${totalPages}</div>
+      <div style="font-size:12px;margin-bottom:4px;"><b>Jumlah cetak (rangkap):</b> ${qty}x</div>
       <div style="font-size:12px;margin-bottom:18px;"><b>Tanggal dibuat:</b> ${dateStr}</div>
 
-      <div style="font-size:13px;font-weight:700;text-transform:uppercase;margin:18px 0 10px;">Ringkasan Total (Semua Dokumen)</div>
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;margin:18px 0 10px;">Ringkasan Total (Semua Dokumen, 1x Cetak)</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead>
           <tr>
@@ -586,7 +608,7 @@ function buildCombinedReportNode(){
         <tbody>${grandRows}</tbody>
       </table>
       <div style="display:flex;justify-content:space-between;align-items:center;background:#1C1B19;color:#EFEDE7;padding:14px 16px;border-radius:4px;margin-top:14px;">
-        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#C9C6BB;">Total Estimasi Cetak Keseluruhan</span>
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#C9C6BB;">Total Estimasi Cetak Keseluruhan${qty > 1 ? ` (×${qty}x)` : ''}</span>
         <span style="font-size:20px;font-weight:800;">${fmtRp(grandTotal)}</span>
       </div>
       ${legendHTML()}
@@ -615,25 +637,11 @@ async function exportCombinedReport(format){
     } else {
       const { jsPDF } = window.jspdf;
       const imgData = canvas.toDataURL('image/jpeg', 0.92);
-      const pageWidthMM = 210, pageHeightMM = 297; // A4
-      const imgWidthMM = pageWidthMM;
-      const imgHeightMM = (canvas.height * imgWidthMM) / canvas.width;
+      const pageWidthMM = 210; // lebar A4, tinggi menyesuaikan konten (1 halaman utuh, tidak terpotong)
+      const imgHeightMM = (canvas.height * pageWidthMM) / canvas.width;
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      if (imgHeightMM <= pageHeightMM){
-        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidthMM, imgHeightMM);
-      } else {
-        let heightLeftMM = imgHeightMM;
-        let positionMM = 0;
-        pdf.addImage(imgData, 'JPEG', 0, positionMM, imgWidthMM, imgHeightMM);
-        heightLeftMM -= pageHeightMM;
-        while (heightLeftMM > 0){
-          positionMM = heightLeftMM - imgHeightMM;
-          pdf.addPage();
-          pdf.addImage(imgData, 'JPEG', 0, positionMM, imgWidthMM, imgHeightMM);
-          heightLeftMM -= pageHeightMM;
-        }
-      }
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: [pageWidthMM, imgHeightMM] });
+      pdf.addImage(imgData, 'JPEG', 0, 0, pageWidthMM, imgHeightMM);
       pdf.save('laporan-gabungan-warna-cetak.pdf');
     }
   } catch (err) {
