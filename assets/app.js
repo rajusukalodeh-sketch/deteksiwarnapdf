@@ -20,6 +20,96 @@ let pricing = {
 };
 let pricingLocked = true;
 
+/* ============================================================
+   Persist pricing & tier settings in the browser (localStorage)
+   so they survive a page refresh — no backend/database needed.
+   Scope: only this app's own settings, stored locally on this
+   device/browser. Nothing is sent anywhere.
+   ============================================================ */
+const SETTINGS_STORAGE_KEY = 'periksa-warna-cetak:settings-v1';
+
+function saveSettingsToStorage(){
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(currentSettingsObject()));
+  } catch (err) {
+    // localStorage may be unavailable (e.g. private browsing) — fail silently,
+    // app still works, it just won't remember settings across refresh.
+  }
+}
+
+function loadSettingsFromStorage(){
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return;
+    applySettingsObject(JSON.parse(raw));
+  } catch (err) {
+    // corrupted or inaccessible storage — ignore and keep defaults
+  }
+}
+
+function applySettingsObject(saved){
+  if (!saved) return;
+  if (saved.pricing){
+    CATEGORY_ORDER.forEach(cat => {
+      if (saved.pricing[cat]){
+        pricing[cat] = Object.assign({}, pricing[cat], saved.pricing[cat]);
+      }
+    });
+  }
+  if (saved.tiers){
+    if (saved.tiers.t1 !== undefined) tier1Input.value = saved.tiers.t1;
+    if (saved.tiers.t2 !== undefined) tier2Input.value = saved.tiers.t2;
+    if (saved.tiers.t3 !== undefined) tier3Input.value = saved.tiers.t3;
+  }
+}
+
+function currentSettingsObject(){
+  return {
+    pricing,
+    tiers: { t1: tier1Input.value, t2: tier2Input.value, t3: tier3Input.value },
+    savedAt: new Date().toISOString()
+  };
+}
+
+/* Unduh pengaturan saat ini sebagai file .json — cara paling "permanen":
+   file ini bisa disimpan, di-backup, dikirim, atau dipindah ke komputer/
+   browser lain, tanpa bergantung pada localStorage satu browser saja. */
+exportSettingsBtn.addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(currentSettingsObject(), null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pengaturan-warna-cetak.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+importSettingsBtn.addEventListener('click', () => {
+  if (pricingLocked) return; // safety net, button is also disabled while locked
+  importSettingsFile.click();
+});
+
+importSettingsFile.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      applySettingsObject(parsed);
+      recategorizeAllDocuments();
+      renderPriceTable();
+      renderGrandTotal();
+      errorEl.textContent = '';
+      importSettingsNote.textContent = 'Pengaturan berhasil diimpor. Klik "Simpan & Kunci" untuk menyimpannya secara permanen di browser ini.';
+    } catch (err) {
+      errorEl.textContent = 'File JSON tidak valid, gagal diimpor.';
+    }
+  };
+  reader.readAsText(file);
+  importSettingsFile.value = '';
+});
+
 // ---- Document state ----
 let documents = []; // { id, name, numPages, results: [...] }
 let docCounter = 0;
@@ -41,6 +131,10 @@ const tierError = document.getElementById('tierError');
 const priceTableBody = document.getElementById('priceTableBody');
 const priceLockToggle = document.getElementById('priceLockToggle');
 const priceLockNote = document.getElementById('priceLockNote');
+const exportSettingsBtn = document.getElementById('exportSettingsBtn');
+const importSettingsBtn = document.getElementById('importSettingsBtn');
+const importSettingsFile = document.getElementById('importSettingsFile');
+const importSettingsNote = document.getElementById('importSettingsNote');
 const grandCard = document.getElementById('grandCard');
 const grandTotalValue = document.getElementById('grandTotalValue');
 const grandBreakdown = document.getElementById('grandBreakdown');
@@ -111,12 +205,20 @@ function recategorizeAllDocuments(){
 tier1Input.addEventListener('input', recategorizeAllDocuments);
 tier2Input.addEventListener('input', recategorizeAllDocuments);
 tier3Input.addEventListener('input', recategorizeAllDocuments);
+loadSettingsFromStorage(); // restore any previously saved price/tier settings
 updateTierUI();
 
 /* ============================================================
    Price table
    ============================================================ */
 function fmtRp(n){ return 'Rp ' + Math.round(n).toLocaleString('id-ID'); }
+
+/* Pembulatan total akhir ke atas, ke kelipatan Rp500 terdekat,
+   supaya tidak ada pecahan aneh seperti Rp76.900 atau Rp12.300.
+   Contoh: 76900 -> 77000, 12300 -> 12500. */
+const ROUNDING_STEP = 500;
+function roundUpTotal(n){ return Math.ceil(n / ROUNDING_STEP) * ROUNDING_STEP; }
+function fmtRpRounded(n){ return fmtRp(roundUpTotal(n)); }
 
 function renderPriceTable(){
   priceTableBody.innerHTML = CATEGORY_ORDER.map(cat => {
@@ -167,10 +269,21 @@ priceLockToggle.addEventListener('click', () => {
   tier1Input.disabled = pricingLocked;
   tier2Input.disabled = pricingLocked;
   tier3Input.disabled = pricingLocked;
+  importSettingsBtn.disabled = pricingLocked;
+
+  if (pricingLocked){
+    // transitioning edit -> locked = user just pressed "Simpan & Kunci"
+    saveSettingsToStorage();
+    recategorizeAllDocuments(); // in case tier values changed while unlocked
+    importSettingsNote.textContent = 'Impor hanya bisa dipakai saat mode edit aktif (klik "Ubah Pengaturan" & masukkan password dulu) — supaya file JSON dari luar tidak bisa mengubah harga sembarangan.';
+  } else {
+    importSettingsNote.textContent = 'Mode edit aktif — kamu bisa klik "Impor Pengaturan (JSON)" untuk memuat file pengaturan yang pernah diunduh sebelumnya.';
+  }
+
   priceLockToggle.textContent = pricingLocked ? 'Ubah Pengaturan' : 'Simpan & Kunci';
   priceLockNote.textContent = pricingLocked
-    ? 'Pengaturan terkunci (readonly). Klik "Ubah Pengaturan" dan masukkan password untuk menyesuaikan harga atau batas kategori, lalu simpan untuk mengunci kembali. Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum.'
-    : 'Mode edit aktif — ubah batas kategori &amp; angka harga di atas, lalu klik "Simpan & Kunci" untuk mengunci kembali.';
+    ? 'Pengaturan terkunci (readonly). Klik "Ubah Pengaturan" dan masukkan password untuk menyesuaikan harga atau batas kategori, lalu simpan untuk mengunci kembali. Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum. Pengaturan tersimpan otomatis di browser ini dan tetap ada meski halaman di-refresh.'
+    : 'Mode edit aktif — ubah batas kategori &amp; angka harga di atas, lalu klik "Simpan & Kunci" untuk mengunci sekaligus menyimpan.';
   renderPriceTable();
 });
 
@@ -225,10 +338,12 @@ function renderGrandTotal(){
     return `${CATEGORY_LABEL[cat]}: ${counts[cat]} hal. × ${fmtRp(prices[cat])}${discounted ? ' (harga diskon)' : ''} = ${fmtRp(subtotal)}`;
   });
   const total = subtotalOnce * qty;
-  grandTotalValue.textContent = fmtRp(total);
+  const totalRounded = roundUpTotal(total);
+  grandTotalValue.textContent = fmtRp(totalRounded);
   const totalPages = documents.reduce((s,d) => s + d.results.length, 0);
   grandBreakdown.innerHTML = `${documents.length} dokumen, ${totalPages} halaman total<br>` + lines.join('<br>')
-    + (qty > 1 ? `<br><b>Subtotal 1x cetak: ${fmtRp(subtotalOnce)} → × ${qty}x cetak = ${fmtRp(total)}</b>` : '');
+    + (qty > 1 ? `<br><b>Subtotal 1x cetak: ${fmtRp(subtotalOnce)} → × ${qty}x cetak = ${fmtRp(total)}</b>` : '')
+    + (totalRounded !== total ? `<br>Sebelum dibulatkan: ${fmtRp(total)} → dibulatkan ke atas: <b>${fmtRp(totalRounded)}</b>` : '');
 }
 
 printQtyInput.addEventListener('input', () => {
@@ -441,7 +556,7 @@ function refreshDocumentUI(doc){
   const prices = unitPrices();
   const qty = getPrintQty();
   const subtotal = CATEGORY_ORDER.reduce((s, cat) => s + counts[cat] * prices[cat], 0) * qty;
-  card.querySelector('[data-stat="subtotal"]').textContent = fmtRp(subtotal) + (qty > 1 ? ` (×${qty}x cetak)` : '');
+  card.querySelector('[data-stat="subtotal"]').textContent = fmtRpRounded(subtotal) + (qty > 1 ? ` (×${qty}x cetak)` : '');
 }
 
 function escapeHTML(str){
@@ -573,7 +688,7 @@ function buildCombinedReportNode(){
           <tbody>${rows}</tbody>
         </table>
         <div style="display:flex;justify-content:flex-end;margin-top:8px;font-size:12px;font-weight:700;">
-          Subtotal dokumen (1x cetak): ${fmtRp(totalOnce)}${qty > 1 ? ` &nbsp;→&nbsp; ×${qty}x cetak = ${fmtRp(total)}` : ''}
+          Subtotal dokumen (1x cetak): ${fmtRp(totalOnce)}${qty > 1 ? ` &nbsp;→&nbsp; ×${qty}x cetak = ${fmtRp(total)}` : ''} &nbsp;→&nbsp; dibulatkan: ${fmtRpRounded(total)}
         </div>
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;margin:16px 0 8px;color:#615E54;">Peta Halaman</div>
         <div style="display:grid;grid-template-columns:repeat(22,22px);gap:3px;">${pageMapHTML(doc)}</div>
@@ -608,9 +723,10 @@ function buildCombinedReportNode(){
         <tbody>${grandRows}</tbody>
       </table>
       <div style="display:flex;justify-content:space-between;align-items:center;background:#1C1B19;color:#EFEDE7;padding:14px 16px;border-radius:4px;margin-top:14px;">
-        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#C9C6BB;">Total Estimasi Cetak Keseluruhan${qty > 1 ? ` (×${qty}x)` : ''}</span>
-        <span style="font-size:20px;font-weight:800;">${fmtRp(grandTotal)}</span>
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#C9C6BB;">Total Estimasi Cetak Keseluruhan${qty > 1 ? ` (×${qty}x)` : ''} — dibulatkan</span>
+        <span style="font-size:20px;font-weight:800;">${fmtRpRounded(grandTotal)}</span>
       </div>
+      ${grandTotal !== roundUpTotal(grandTotal) ? `<div style="font-size:10.5px;color:#96927F;margin-top:6px;text-align:right;">Sebelum dibulatkan: ${fmtRp(grandTotal)}</div>` : ''}
       ${legendHTML()}
 
       <div style="font-size:13px;font-weight:700;text-transform:uppercase;margin:30px 0 4px;border-top:2px solid #1C1B19;padding-top:20px;">Rincian per Dokumen</div>

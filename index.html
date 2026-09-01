@@ -29,7 +29,7 @@
     <div class="uploader" id="uploader" tabindex="0">
       <input type="file" id="fileInput" accept="application/pdf" multiple>
       <div class="uploader-label">Klik atau seret satu / beberapa file PDF ke sini</div>
-      <div class="uploader-hint">Diproses langsung di browser — file tidak diunggah ke server mana pun</div>
+      <div class="uploader-hint"><b>Diproses langsung di browser — file tidak diunggah ke server mana pun</b></div>
     </div>
 
     <div class="tier-ranges" id="tierRanges"></div>
@@ -66,8 +66,7 @@
   <!-- Per-document result cards get appended here -->
   <div id="documentsContainer"></div>
 
-
-  <!-- Price table + category thresholds (locked by default) -->
+    <!-- Price table + category thresholds (locked by default) -->
   <div class="card">
     <div class="section-label">
       <span>Tabel Harga &amp; Batas Kategori</span>
@@ -105,7 +104,18 @@
     </table>
     <div class="price-lock-note" id="priceLockNote">
       Pengaturan terkunci (readonly). Klik "Ubah Pengaturan" dan masukkan password untuk menyesuaikan harga atau batas kategori, lalu simpan untuk mengunci kembali.
-      Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum.
+      Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum. Pengaturan tersimpan otomatis di browser ini dan tetap ada meski halaman di-refresh.
+    </div>
+
+    <hr class="divider">
+    <div class="field-label" style="margin-bottom:10px;">Backup / pindahkan pengaturan (file JSON — permanen, bisa disimpan atau dipindah ke komputer lain)</div>
+    <div class="doc-actions" style="margin-top:0;">
+      <button class="btn small secondary" id="exportSettingsBtn">Unduh Pengaturan (JSON)</button>
+      <button class="btn small secondary" id="importSettingsBtn" disabled>Impor Pengaturan (JSON)</button>
+      <input type="file" id="importSettingsFile" accept="application/json,.json" style="display:none;">
+    </div>
+    <div class="price-lock-note" id="importSettingsNote">
+      Impor hanya bisa dipakai saat mode edit aktif (klik "Ubah Pengaturan" &amp; masukkan password dulu) — supaya file JSON dari luar tidak bisa mengubah harga sembarangan.
     </div>
   </div>
 </div>
