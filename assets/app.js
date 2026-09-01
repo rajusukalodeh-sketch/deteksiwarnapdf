@@ -71,6 +71,43 @@ function currentSettingsObject(){
   };
 }
 
+// ---- DOM refs ----
+const uploader = document.getElementById('uploader');
+const fileInput = document.getElementById('fileInput');
+const filelistEl = document.getElementById('filelist');
+const errorEl = document.getElementById('error');
+const progressWrap = document.getElementById('progressWrap');
+const progressText = document.getElementById('progressText');
+const progressFill = document.getElementById('progressFill');
+const tier1Input = document.getElementById('tier1');
+const tier2Input = document.getElementById('tier2');
+const tier3Input = document.getElementById('tier3');
+const tierRanges = document.getElementById('tierRanges');
+const tierError = document.getElementById('tierError');
+const priceTableBody = document.getElementById('priceTableBody');
+const priceLockToggle = document.getElementById('priceLockToggle');
+const priceLockNote = document.getElementById('priceLockNote');
+const exportSettingsBtn = document.getElementById('exportSettingsBtn');
+const importSettingsBtn = document.getElementById('importSettingsBtn');
+const importSettingsFile = document.getElementById('importSettingsFile');
+const importSettingsNote = document.getElementById('importSettingsNote');
+const grandCard = document.getElementById('grandCard');
+const grandTotalValue = document.getElementById('grandTotalValue');
+const grandBreakdown = document.getElementById('grandBreakdown');
+const documentsContainer = document.getElementById('documentsContainer');
+const printQtyInput = document.getElementById('printQty');
+const exportPdfBtn = document.getElementById('exportPdfBtn');
+const exportPngBtn = document.getElementById('exportPngBtn');
+const modalOverlay = document.getElementById('modalOverlay');
+const modalClose = document.getElementById('modalClose');
+const modalTitle = document.getElementById('modalTitle');
+const modalImg = document.getElementById('modalImg');
+const modalStatus = document.getElementById('modalStatus');
+const modalStatusText = document.getElementById('modalStatusText');
+const modalStatusPct = document.getElementById('modalStatusPct');
+const modalNote = document.getElementById('modalNote');
+const catButtons = Array.from(document.querySelectorAll('.modal-cat-btn'));
+
 /* Unduh pengaturan saat ini sebagai file .json — cara paling "permanen":
    file ini bisa disimpan, di-backup, dikirim, atau dipindah ke komputer/
    browser lain, tanpa bergantung pada localStorage satu browser saja. */
@@ -114,43 +151,6 @@ importSettingsFile.addEventListener('change', (e) => {
 let documents = []; // { id, name, numPages, results: [...] }
 let docCounter = 0;
 let activePreview = null; // { docId, page }
-
-// ---- DOM refs ----
-const uploader = document.getElementById('uploader');
-const fileInput = document.getElementById('fileInput');
-const filelistEl = document.getElementById('filelist');
-const errorEl = document.getElementById('error');
-const progressWrap = document.getElementById('progressWrap');
-const progressText = document.getElementById('progressText');
-const progressFill = document.getElementById('progressFill');
-const tier1Input = document.getElementById('tier1');
-const tier2Input = document.getElementById('tier2');
-const tier3Input = document.getElementById('tier3');
-const tierRanges = document.getElementById('tierRanges');
-const tierError = document.getElementById('tierError');
-const priceTableBody = document.getElementById('priceTableBody');
-const priceLockToggle = document.getElementById('priceLockToggle');
-const priceLockNote = document.getElementById('priceLockNote');
-const exportSettingsBtn = document.getElementById('exportSettingsBtn');
-const importSettingsBtn = document.getElementById('importSettingsBtn');
-const importSettingsFile = document.getElementById('importSettingsFile');
-const importSettingsNote = document.getElementById('importSettingsNote');
-const grandCard = document.getElementById('grandCard');
-const grandTotalValue = document.getElementById('grandTotalValue');
-const grandBreakdown = document.getElementById('grandBreakdown');
-const documentsContainer = document.getElementById('documentsContainer');
-const printQtyInput = document.getElementById('printQty');
-const exportPdfBtn = document.getElementById('exportPdfBtn');
-const exportPngBtn = document.getElementById('exportPngBtn');
-const modalOverlay = document.getElementById('modalOverlay');
-const modalClose = document.getElementById('modalClose');
-const modalTitle = document.getElementById('modalTitle');
-const modalImg = document.getElementById('modalImg');
-const modalStatus = document.getElementById('modalStatus');
-const modalStatusText = document.getElementById('modalStatusText');
-const modalStatusPct = document.getElementById('modalStatusPct');
-const modalNote = document.getElementById('modalNote');
-const catButtons = Array.from(document.querySelectorAll('.modal-cat-btn'));
 
 /* ============================================================
    Tier classification
