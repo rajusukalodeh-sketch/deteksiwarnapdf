@@ -722,7 +722,6 @@ async function processExcel(fileName, arrayBuffer, fileIndex, fileTotal){
     
     // Convert sheet to HTML
     const htmlContent = window.XLSX.utils.sheet_to_html(worksheet, { 
-      header: 1, 
       defval: '',
       raw: false
     });
