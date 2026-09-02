@@ -357,6 +357,35 @@ exportPngBtn.addEventListener('click', () => exportCombinedReport('png'));
 /* ============================================================
    Upload handling (multiple files)
    ============================================================ */
+
+// File type detection and validation
+function getFileType(file){
+  const name = file.name.toLowerCase();
+  const type = file.type;
+  
+  // Images
+  if (type.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(name)) return 'image';
+  
+  // PDF
+  if (type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  
+  // Word
+  if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+      type === 'application/msword' ||
+      name.endsWith('.docx') || name.endsWith('.doc')) return 'word';
+  
+  // Excel
+  if (type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      type === 'application/vnd.ms-excel' ||
+      name.endsWith('.xlsx') || name.endsWith('.xls')) return 'excel';
+  
+  return null;
+}
+
+function isFileTypeSupported(file){
+  return getFileType(file) !== null;
+}
+
 uploader.addEventListener('click', () => fileInput.click());
 uploader.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
 uploader.addEventListener('dragover', e => { e.preventDefault(); uploader.classList.add('drag'); });
@@ -373,22 +402,32 @@ fileInput.addEventListener('change', e => {
 
 async function handleFiles(fileList){
   errorEl.textContent = '';
-  const files = Array.from(fileList).filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+  const files = Array.from(fileList).filter(f => isFileTypeSupported(f));
   const rejected = fileList.length - files.length;
   if (rejected > 0){
-    errorEl.textContent = `${rejected} file dilewati karena bukan PDF.`;
+    errorEl.textContent = `${rejected} file dilewati (hanya PDF, Word, Excel, dan Gambar yang didukung).`;
   }
   if (files.length === 0) return;
 
   progressWrap.classList.add('active');
   for (let fi = 0; fi < files.length; fi++){
     const file = files[fi];
+    const fileType = getFileType(file);
     filelistEl.textContent = `Memproses dokumen ${fi+1}/${files.length}: ${file.name}`;
     try {
       const arrayBuffer = await file.arrayBuffer();
-      await processPDF(file.name, arrayBuffer, fi+1, files.length);
+      
+      if (fileType === 'pdf') {
+        await processPDF(file.name, arrayBuffer, fi+1, files.length);
+      } else if (fileType === 'image') {
+        await processImage(file.name, arrayBuffer, fi+1, files.length);
+      } else if (fileType === 'word') {
+        await processWord(file.name, arrayBuffer, fi+1, files.length);
+      } else if (fileType === 'excel') {
+        await processExcel(file.name, arrayBuffer, fi+1, files.length);
+      }
     } catch (err) {
-      errorEl.textContent = `Gagal memproses "${file.name}". Pastikan file tidak rusak atau terkunci.`;
+      errorEl.textContent = `Gagal memproses "${file.name}". Pastikan file tidak rusak atau terkunci. Error: ${err.message}`;
     }
   }
   progressWrap.classList.remove('active');
@@ -470,6 +509,307 @@ async function processPDF(fileName, arrayBuffer, fileIndex, fileTotal){
 
   refreshDocumentUI(doc);
   renderGrandTotal();
+}
+
+/* ============================================================
+   Process Image files
+   ============================================================ */
+async function processImage(fileName, arrayBuffer, fileIndex, fileTotal){
+  if (!updateTierUI()){
+    errorEl.textContent = 'Perbaiki dulu batas kategori sebelum memproses file.';
+    throw new Error('invalid tiers');
+  }
+  const { t1, t2, t3 } = getTiers();
+
+  const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+  const url = URL.createObjectURL(blob);
+  
+  const docId = 'doc' + (++docCounter);
+  const doc = { id: docId, name: fileName, numPages: 1, results: [null] };
+  documents.push(doc);
+  const docCard = buildDocumentCard(doc);
+  documentsContainer.appendChild(docCard);
+
+  const cellsWrap = docCard.querySelector('.pages-grid');
+  const cell = document.createElement('div');
+  cell.className = 'page-cell pending';
+  cell.textContent = '1';
+  cell.id = 'cell-' + docId + '-1';
+  cellsWrap.appendChild(cell);
+
+  progressText.textContent = `Dokumen ${fileIndex}/${fileTotal} — memproses gambar (${fileName})`;
+  progressFill.style.width = (((fileIndex-1 + 0.5) / fileTotal) * 100) + '%';
+
+  try {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const targetWidth = 500;
+      const scale = targetWidth / img.naturalWidth;
+      canvas.width = targetWidth;
+      canvas.height = Math.ceil(img.naturalHeight * scale);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let colored = 0, sampled = 0;
+      const stride = 3;
+      const w = canvas.width, h = canvas.height;
+      for (let y = 0; y < h; y += stride){
+        for (let x = 0; x < w; x += stride){
+          const idx = (y * w + x) * 4;
+          const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
+          const diff = Math.max(r,g,b) - Math.min(r,g,b);
+          if (diff > PIXEL_DIFF_THRESHOLD) colored++;
+          sampled++;
+        }
+      }
+      const ratio = sampled > 0 ? colored / sampled : 0;
+      const category = classify(ratio * 100, t1, t2, t3);
+      const thumb = canvas.toDataURL('image/jpeg', 0.72);
+      doc.results[0] = { page: 1, ratio, category, thumb, manualOverride: null };
+
+      cell.classList.remove('pending');
+      cell.classList.add(category);
+      cell.title = `Gambar — ${CATEGORY_LABEL[category]} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
+      cell.addEventListener('click', () => openPreview(docId, 1));
+
+      URL.revokeObjectURL(url);
+      refreshDocumentUI(doc);
+      renderGrandTotal();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      doc.results[0] = { page: 1, ratio: 0, category: 'bw', thumb: null, manualOverride: null, error: true };
+      cell.classList.remove('pending');
+      cell.classList.add('bw');
+      refreshDocumentUI(doc);
+    };
+    img.src = url;
+  } catch (err) {
+    URL.revokeObjectURL(url);
+    doc.results[0] = { page: 1, ratio: 0, category: 'bw', thumb: null, manualOverride: null, error: true };
+    throw err;
+  }
+
+  progressFill.style.width = ((fileIndex / fileTotal) * 100) + '%';
+  await new Promise(res => setTimeout(res, 0));
+}
+
+/* ============================================================
+   Process Word documents (.docx / .doc)
+   ============================================================ */
+async function processWord(fileName, arrayBuffer, fileIndex, fileTotal){
+  if (!updateTierUI()){
+    errorEl.textContent = 'Perbaiki dulu batas kategori sebelum memproses file.';
+    throw new Error('invalid tiers');
+  }
+  
+  // Load mammoth.js if not already loaded
+  if (!window.mammoth) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/mammoth@1.6.1/mammoth.browser.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  try {
+    const { value: html } = await window.mammoth.convertArrayBuffer(arrayBuffer);
+    const htmlContent = html || '<p>[Dokumen kosong atau tidak terbaca]</p>';
+    
+    // Render HTML to canvas using html2canvas
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '-9999px';
+    container.style.backgroundColor = 'white';
+    container.style.padding = '20px';
+    container.style.maxWidth = '600px';
+    container.style.fontFamily = 'Arial, sans-serif';
+    container.style.fontSize = '12px';
+    container.style.lineHeight = '1.5';
+    container.innerHTML = htmlContent;
+    document.body.appendChild(container);
+
+    try {
+      const canvas = await html2canvas(container, { backgroundColor: '#ffffff', scale: 1.5 });
+      document.body.removeChild(container);
+
+      const { t1, t2, t3 } = getTiers();
+      
+      const docId = 'doc' + (++docCounter);
+      const doc = { id: docId, name: fileName, numPages: 1, results: [null] };
+      documents.push(doc);
+      const docCard = buildDocumentCard(doc);
+      documentsContainer.appendChild(docCard);
+
+      const cellsWrap = docCard.querySelector('.pages-grid');
+      const cell = document.createElement('div');
+      cell.className = 'page-cell pending';
+      cell.textContent = '1';
+      cell.id = 'cell-' + docId + '-1';
+      cellsWrap.appendChild(cell);
+
+      progressText.textContent = `Dokumen ${fileIndex}/${fileTotal} — menganalisis dokumen Word (${fileName})`;
+      progressFill.style.width = (((fileIndex-1 + 0.7) / fileTotal) * 100) + '%';
+
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let colored = 0, sampled = 0;
+      const stride = 3;
+      const w = canvas.width, h = canvas.height;
+      for (let y = 0; y < h; y += stride){
+        for (let x = 0; x < w; x += stride){
+          const idx = (y * w + x) * 4;
+          const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
+          const diff = Math.max(r,g,b) - Math.min(r,g,b);
+          if (diff > PIXEL_DIFF_THRESHOLD) colored++;
+          sampled++;
+        }
+      }
+      const ratio = sampled > 0 ? colored / sampled : 0;
+      const category = classify(ratio * 100, t1, t2, t3);
+      const thumb = canvas.toDataURL('image/jpeg', 0.72);
+      doc.results[0] = { page: 1, ratio, category, thumb, manualOverride: null };
+
+      cell.classList.remove('pending');
+      cell.classList.add(category);
+      cell.title = `Dokumen Word — ${CATEGORY_LABEL[category]} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
+      cell.addEventListener('click', () => openPreview(docId, 1));
+
+      refreshDocumentUI(doc);
+      renderGrandTotal();
+    } catch (err) {
+      document.body.removeChild(container);
+      throw err;
+    }
+  } catch (err) {
+    errorEl.textContent = `Gagal membaca dokumen Word "${fileName}": ${err.message}`;
+    throw err;
+  }
+
+  progressFill.style.width = ((fileIndex / fileTotal) * 100) + '%';
+  await new Promise(res => setTimeout(res, 0));
+}
+
+/* ============================================================
+   Process Excel documents (.xlsx / .xls)
+   ============================================================ */
+async function processExcel(fileName, arrayBuffer, fileIndex, fileTotal){
+  if (!updateTierUI()){
+    errorEl.textContent = 'Perbaiki dulu batas kategori sebelum memproses file.';
+    throw new Error('invalid tiers');
+  }
+
+  // Load xlsx if not already loaded
+  if (!window.XLSX) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  try {
+    const workbook = window.XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+    const sheetNames = workbook.SheetNames;
+    const worksheet = workbook.Sheets[sheetNames[0]];
+    
+    // Convert sheet to HTML
+    const htmlContent = window.XLSX.utils.sheet_to_html(worksheet, { 
+      header: 1, 
+      defval: '',
+      raw: false
+    });
+
+    // Render HTML to canvas
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '-9999px';
+    container.style.backgroundColor = 'white';
+    container.style.padding = '20px';
+    container.style.maxWidth = '800px';
+    container.style.fontFamily = 'Arial, sans-serif';
+    container.style.fontSize = '11px';
+    container.innerHTML = htmlContent;
+    document.body.appendChild(container);
+
+    // Style the table
+    const table = container.querySelector('table');
+    if (table) {
+      table.style.borderCollapse = 'collapse';
+      table.style.width = '100%';
+      table.querySelectorAll('td, th').forEach(cell => {
+        cell.style.border = '1px solid #ccc';
+        cell.style.padding = '5px';
+      });
+    }
+
+    try {
+      const canvas = await html2canvas(container, { backgroundColor: '#ffffff', scale: 1.5 });
+      document.body.removeChild(container);
+
+      const { t1, t2, t3 } = getTiers();
+      
+      const docId = 'doc' + (++docCounter);
+      const doc = { id: docId, name: fileName, numPages: 1, results: [null] };
+      documents.push(doc);
+      const docCard = buildDocumentCard(doc);
+      documentsContainer.appendChild(docCard);
+
+      const cellsWrap = docCard.querySelector('.pages-grid');
+      const cell = document.createElement('div');
+      cell.className = 'page-cell pending';
+      cell.textContent = '1';
+      cell.id = 'cell-' + docId + '-1';
+      cellsWrap.appendChild(cell);
+
+      progressText.textContent = `Dokumen ${fileIndex}/${fileTotal} — menganalisis file Excel (${fileName})`;
+      progressFill.style.width = (((fileIndex-1 + 0.7) / fileTotal) * 100) + '%';
+
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let colored = 0, sampled = 0;
+      const stride = 3;
+      const w = canvas.width, h = canvas.height;
+      for (let y = 0; y < h; y += stride){
+        for (let x = 0; x < w; x += stride){
+          const idx = (y * w + x) * 4;
+          const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
+          const diff = Math.max(r,g,b) - Math.min(r,g,b);
+          if (diff > PIXEL_DIFF_THRESHOLD) colored++;
+          sampled++;
+        }
+      }
+      const ratio = sampled > 0 ? colored / sampled : 0;
+      const category = classify(ratio * 100, t1, t2, t3);
+      const thumb = canvas.toDataURL('image/jpeg', 0.72);
+      doc.results[0] = { page: 1, ratio, category, thumb, manualOverride: null };
+
+      cell.classList.remove('pending');
+      cell.classList.add(category);
+      cell.title = `File Excel — ${CATEGORY_LABEL[category]} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
+      cell.addEventListener('click', () => openPreview(docId, 1));
+
+      refreshDocumentUI(doc);
+      renderGrandTotal();
+    } catch (err) {
+      document.body.removeChild(container);
+      throw err;
+    }
+  } catch (err) {
+    errorEl.textContent = `Gagal membaca file Excel "${fileName}": ${err.message}`;
+    throw err;
+  }
+
+  progressFill.style.width = ((fileIndex / fileTotal) * 100) + '%';
+  await new Promise(res => setTimeout(res, 0));
 }
 
 /* ============================================================
