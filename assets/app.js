@@ -11,6 +11,17 @@ const PIXEL_DIFF_THRESHOLD = 20;
 const CATEGORY_LABEL = { bw: 'Hitam Putih', color: 'Warna', full: 'Full Warna', block: 'Block Warna' };
 const CATEGORY_ORDER = ['bw', 'color', 'full', 'block'];
 
+/* Ekstraksi pesan error yang aman — beberapa kegagalan (mis. gagal
+   load script, event DOM) bukan objek Error biasa dan tidak punya
+   .message, sehingga sebelumnya muncul "Error: undefined". */
+function getErrorMessage(err){
+  if (!err) return 'Kesalahan tidak diketahui';
+  if (typeof err === 'string') return err;
+  if (err.message) return err.message;
+  if (err.type) return 'Gagal memuat resource (' + err.type + ')';
+  try { return JSON.stringify(err); } catch (e) { return String(err); }
+}
+
 // ---- Pricing config (locked by default; editable via "Ubah Harga") ----
 let pricing = {
   bw:    { normal: 500,  discount: 300,  minQty: 50 },
@@ -331,19 +342,20 @@ function renderGrandTotal(){
   const prices = unitPrices();
   const qty = getPrintQty();
   let subtotalOnce = 0;
-  const lines = CATEGORY_ORDER.map(cat => {
-    const subtotal = counts[cat] * prices[cat];
-    subtotalOnce += subtotal;
-    const discounted = counts[cat] >= pricing[cat].minQty;
-    return `${CATEGORY_LABEL[cat]}: ${counts[cat]} hal. × ${fmtRp(prices[cat])}${discounted ? ' (harga diskon)' : ''} = ${fmtRp(subtotal)}`;
-  });
+  const lines = CATEGORY_ORDER
+    .filter(cat => counts[cat] > 0) // sembunyikan kategori yang halamannya 0
+    .map(cat => {
+      const subtotal = counts[cat] * prices[cat];
+      subtotalOnce += subtotal;
+      const discounted = counts[cat] >= pricing[cat].minQty;
+      return `${CATEGORY_LABEL[cat]}: ${counts[cat]} hal. × ${fmtRp(prices[cat])}${discounted ? ' (harga diskon)' : ''} = ${fmtRp(subtotal)}`;
+    });
   const total = subtotalOnce * qty;
   const totalRounded = roundUpTotal(total);
   grandTotalValue.textContent = fmtRp(totalRounded);
   const totalPages = documents.reduce((s,d) => s + d.results.length, 0);
   grandBreakdown.innerHTML = `${documents.length} dokumen, ${totalPages} halaman total<br>` + lines.join('<br>')
-    + (qty > 1 ? `<br><b>Subtotal 1x cetak: ${fmtRp(subtotalOnce)} → × ${qty}x cetak = ${fmtRp(total)}</b>` : '')
-    + (totalRounded !== total ? `<br>Sebelum dibulatkan: ${fmtRp(total)} → dibulatkan ke atas: <b>${fmtRp(totalRounded)}</b>` : '');
+    + (qty > 1 ? `<br><b>Subtotal 1x cetak: ${fmtRp(subtotalOnce)} → × ${qty}x cetak = ${fmtRp(total)}</b>` : '');
 }
 
 printQtyInput.addEventListener('input', () => {
@@ -427,7 +439,7 @@ async function handleFiles(fileList){
         await processExcel(file.name, arrayBuffer, fi+1, files.length);
       }
     } catch (err) {
-      errorEl.textContent = `Gagal memproses "${file.name}". Pastikan file tidak rusak atau terkunci. Error: ${err.message}`;
+      errorEl.textContent = `Gagal memproses "${file.name}". Pastikan file tidak rusak atau terkunci. Error: ${getErrorMessage(err)}`;
     }
   }
   progressWrap.classList.remove('active');
@@ -605,19 +617,15 @@ async function processWord(fileName, arrayBuffer, fileIndex, fileTotal){
     throw new Error('invalid tiers');
   }
   
-  // Load mammoth.js if not already loaded
+  // mammoth.js dimuat secara lokal lewat <script src="mammoth.browser.min.js">
+  // (bukan dari CDN) supaya aplikasi tetap jalan 100% offline.
   if (!window.mammoth) {
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/mammoth@1.6.1/mammoth.browser.min.js';
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
+    errorEl.textContent = `Gagal memproses "${fileName}": library pembaca Word (mammoth.js) tidak termuat. Pastikan file mammoth.browser.min.js ada di folder yang sama dan tidak diblokir.`;
+    throw new Error('mammoth.js tidak tersedia');
   }
 
   try {
-    const { value: html } = await window.mammoth.convertArrayBuffer(arrayBuffer);
+    const { value: html } = await window.mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
     const htmlContent = html || '<p>[Dokumen kosong atau tidak terbaca]</p>';
     
     // Render HTML to canvas using html2canvas
@@ -634,60 +642,59 @@ async function processWord(fileName, arrayBuffer, fileIndex, fileTotal){
     container.innerHTML = htmlContent;
     document.body.appendChild(container);
 
+    let canvas;
     try {
-      const canvas = await html2canvas(container, { backgroundColor: '#ffffff', scale: 1.5 });
-      document.body.removeChild(container);
-
-      const { t1, t2, t3 } = getTiers();
-      
-      const docId = 'doc' + (++docCounter);
-      const doc = { id: docId, name: fileName, numPages: 1, results: [null] };
-      documents.push(doc);
-      const docCard = buildDocumentCard(doc);
-      documentsContainer.appendChild(docCard);
-
-      const cellsWrap = docCard.querySelector('.pages-grid');
-      const cell = document.createElement('div');
-      cell.className = 'page-cell pending';
-      cell.textContent = '1';
-      cell.id = 'cell-' + docId + '-1';
-      cellsWrap.appendChild(cell);
-
-      progressText.textContent = `Dokumen ${fileIndex}/${fileTotal} — menganalisis dokumen Word (${fileName})`;
-      progressFill.style.width = (((fileIndex-1 + 0.7) / fileTotal) * 100) + '%';
-
-      const ctx = canvas.getContext('2d');
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-      let colored = 0, sampled = 0;
-      const stride = 3;
-      const w = canvas.width, h = canvas.height;
-      for (let y = 0; y < h; y += stride){
-        for (let x = 0; x < w; x += stride){
-          const idx = (y * w + x) * 4;
-          const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
-          const diff = Math.max(r,g,b) - Math.min(r,g,b);
-          if (diff > PIXEL_DIFF_THRESHOLD) colored++;
-          sampled++;
-        }
-      }
-      const ratio = sampled > 0 ? colored / sampled : 0;
-      const category = classify(ratio * 100, t1, t2, t3);
-      const thumb = canvas.toDataURL('image/jpeg', 0.72);
-      doc.results[0] = { page: 1, ratio, category, thumb, manualOverride: null };
-
-      cell.classList.remove('pending');
-      cell.classList.add(category);
-      cell.title = `Dokumen Word — ${CATEGORY_LABEL[category]} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
-      cell.addEventListener('click', () => openPreview(docId, 1));
-
-      refreshDocumentUI(doc);
-      renderGrandTotal();
-    } catch (err) {
-      document.body.removeChild(container);
-      throw err;
+      canvas = await html2canvas(container, { backgroundColor: '#ffffff', scale: 1.5 });
+    } finally {
+      if (container.parentNode) document.body.removeChild(container);
     }
-  } catch (err) {
-    errorEl.textContent = `Gagal membaca dokumen Word "${fileName}": ${err.message}`;
+
+    const { t1, t2, t3 } = getTiers();
+
+    const docId = 'doc' + (++docCounter);
+    const doc = { id: docId, name: fileName, numPages: 1, results: [null] };
+    documents.push(doc);
+    const docCard = buildDocumentCard(doc);
+    documentsContainer.appendChild(docCard);
+
+    const cellsWrap = docCard.querySelector('.pages-grid');
+    const cell = document.createElement('div');
+    cell.className = 'page-cell pending';
+    cell.textContent = '1';
+    cell.id = 'cell-' + docId + '-1';
+    cellsWrap.appendChild(cell);
+
+    progressText.textContent = `Dokumen ${fileIndex}/${fileTotal} — menganalisis dokumen Word (${fileName})`;
+    progressFill.style.width = (((fileIndex-1 + 0.7) / fileTotal) * 100) + '%';
+
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let colored = 0, sampled = 0;
+    const stride = 3;
+    const w = canvas.width, h = canvas.height;
+    for (let y = 0; y < h; y += stride){
+      for (let x = 0; x < w; x += stride){
+        const idx = (y * w + x) * 4;
+        const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
+        const diff = Math.max(r,g,b) - Math.min(r,g,b);
+        if (diff > PIXEL_DIFF_THRESHOLD) colored++;
+        sampled++;
+      }
+    }
+    const ratio = sampled > 0 ? colored / sampled : 0;
+    const category = classify(ratio * 100, t1, t2, t3);
+    const thumb = canvas.toDataURL('image/jpeg', 0.72);
+    doc.results[0] = { page: 1, ratio, category, thumb, manualOverride: null };
+
+    cell.classList.remove('pending');
+    cell.classList.add(category);
+    cell.title = `Dokumen Word — ${CATEGORY_LABEL[category]} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
+    cell.addEventListener('click', () => openPreview(docId, 1));
+
+    refreshDocumentUI(doc);
+    renderGrandTotal();
+  } catch (err){
+    errorEl.textContent = `Gagal membaca dokumen Word "${fileName}": ${getErrorMessage(err)}`;
     throw err;
   }
 
@@ -704,15 +711,11 @@ async function processExcel(fileName, arrayBuffer, fileIndex, fileTotal){
     throw new Error('invalid tiers');
   }
 
-  // Load xlsx if not already loaded
+  // xlsx.js (SheetJS) dimuat secara lokal lewat <script src="xlsx.full.min.js">
+  // (bukan dari CDN) supaya aplikasi tetap jalan 100% offline.
   if (!window.XLSX) {
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
+    errorEl.textContent = `Gagal memproses "${fileName}": library pembaca Excel (xlsx.js) tidak termuat. Pastikan file xlsx.full.min.js ada di folder yang sama dan tidak diblokir.`;
+    throw new Error('xlsx.js tidak tersedia');
   }
 
   try {
@@ -750,60 +753,59 @@ async function processExcel(fileName, arrayBuffer, fileIndex, fileTotal){
       });
     }
 
+    let canvas;
     try {
-      const canvas = await html2canvas(container, { backgroundColor: '#ffffff', scale: 1.5 });
-      document.body.removeChild(container);
-
-      const { t1, t2, t3 } = getTiers();
-      
-      const docId = 'doc' + (++docCounter);
-      const doc = { id: docId, name: fileName, numPages: 1, results: [null] };
-      documents.push(doc);
-      const docCard = buildDocumentCard(doc);
-      documentsContainer.appendChild(docCard);
-
-      const cellsWrap = docCard.querySelector('.pages-grid');
-      const cell = document.createElement('div');
-      cell.className = 'page-cell pending';
-      cell.textContent = '1';
-      cell.id = 'cell-' + docId + '-1';
-      cellsWrap.appendChild(cell);
-
-      progressText.textContent = `Dokumen ${fileIndex}/${fileTotal} — menganalisis file Excel (${fileName})`;
-      progressFill.style.width = (((fileIndex-1 + 0.7) / fileTotal) * 100) + '%';
-
-      const ctx = canvas.getContext('2d');
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-      let colored = 0, sampled = 0;
-      const stride = 3;
-      const w = canvas.width, h = canvas.height;
-      for (let y = 0; y < h; y += stride){
-        for (let x = 0; x < w; x += stride){
-          const idx = (y * w + x) * 4;
-          const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
-          const diff = Math.max(r,g,b) - Math.min(r,g,b);
-          if (diff > PIXEL_DIFF_THRESHOLD) colored++;
-          sampled++;
-        }
-      }
-      const ratio = sampled > 0 ? colored / sampled : 0;
-      const category = classify(ratio * 100, t1, t2, t3);
-      const thumb = canvas.toDataURL('image/jpeg', 0.72);
-      doc.results[0] = { page: 1, ratio, category, thumb, manualOverride: null };
-
-      cell.classList.remove('pending');
-      cell.classList.add(category);
-      cell.title = `File Excel — ${CATEGORY_LABEL[category]} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
-      cell.addEventListener('click', () => openPreview(docId, 1));
-
-      refreshDocumentUI(doc);
-      renderGrandTotal();
-    } catch (err) {
-      document.body.removeChild(container);
-      throw err;
+      canvas = await html2canvas(container, { backgroundColor: '#ffffff', scale: 1.5 });
+    } finally {
+      if (container.parentNode) document.body.removeChild(container);
     }
-  } catch (err) {
-    errorEl.textContent = `Gagal membaca file Excel "${fileName}": ${err.message}`;
+
+    const { t1, t2, t3 } = getTiers();
+
+    const docId = 'doc' + (++docCounter);
+    const doc = { id: docId, name: fileName, numPages: 1, results: [null] };
+    documents.push(doc);
+    const docCard = buildDocumentCard(doc);
+    documentsContainer.appendChild(docCard);
+
+    const cellsWrap = docCard.querySelector('.pages-grid');
+    const cell = document.createElement('div');
+    cell.className = 'page-cell pending';
+    cell.textContent = '1';
+    cell.id = 'cell-' + docId + '-1';
+    cellsWrap.appendChild(cell);
+
+    progressText.textContent = `Dokumen ${fileIndex}/${fileTotal} — menganalisis file Excel (${fileName})`;
+    progressFill.style.width = (((fileIndex-1 + 0.7) / fileTotal) * 100) + '%';
+
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let colored = 0, sampled = 0;
+    const stride = 3;
+    const w = canvas.width, h = canvas.height;
+    for (let y = 0; y < h; y += stride){
+      for (let x = 0; x < w; x += stride){
+        const idx = (y * w + x) * 4;
+        const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
+        const diff = Math.max(r,g,b) - Math.min(r,g,b);
+        if (diff > PIXEL_DIFF_THRESHOLD) colored++;
+        sampled++;
+      }
+    }
+    const ratio = sampled > 0 ? colored / sampled : 0;
+    const category = classify(ratio * 100, t1, t2, t3);
+    const thumb = canvas.toDataURL('image/jpeg', 0.72);
+    doc.results[0] = { page: 1, ratio, category, thumb, manualOverride: null };
+
+    cell.classList.remove('pending');
+    cell.classList.add(category);
+    cell.title = `File Excel — ${CATEGORY_LABEL[category]} (${(ratio*100).toFixed(2)}% area berwarna) — klik untuk preview`;
+    cell.addEventListener('click', () => openPreview(docId, 1));
+
+    refreshDocumentUI(doc);
+    renderGrandTotal();
+  } catch (err){
+    errorEl.textContent = `Gagal membaca file Excel "${fileName}": ${getErrorMessage(err)}`;
     throw err;
   }
 
