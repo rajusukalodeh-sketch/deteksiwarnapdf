@@ -1,155 +1,185 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Periksa Warna Cetak</title>
-<link rel="stylesheet" href="assets/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Periksa Warna Cetak</title>
+  <link rel="stylesheet" href="assets/style.css">
 </head>
+
 <body>
-<div class="app">
+  <div class="app">
 
-  <div class="docket">
-    <div>
-      <div class="docket-title">Periksa Warna Cetak</div>
-      <div class="docket-sub">Deteksi halaman berwarna &amp; estimasi biaya cetak</div>
-    </div>
-    <svg class="regmark" viewBox="0 0 60 60">
-      <circle cx="30" cy="28" r="14" fill="none" stroke="#00AEEF" stroke-width="1.3" opacity="0.9"/>
-      <circle cx="32" cy="30" r="14" fill="none" stroke="#EC008C" stroke-width="1.3" opacity="0.9"/>
-      <circle cx="28" cy="30" r="14" fill="none" stroke="#F2C400" stroke-width="1.3" opacity="0.9"/>
-      <line x1="30" y1="8" x2="30" y2="52" stroke="#EFEDE7" stroke-width="1"/>
-      <line x1="8" y1="30" x2="52" y2="30" stroke="#EFEDE7" stroke-width="1"/>
-    </svg>
-  </div>
-
-  <!-- Upload -->
-  <div class="card">
-    <div class="section-label"><b>Diproses langsung di browser — file tidak diunggah ke server mana pun</b></div>
-    <div class="uploader" id="uploader" tabindex="0">
-      <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.bmp,.webp,.svg" multiple>
-      <div class="uploader-label">Klik atau seret file ke sini</div>
-      <div class="uploader-hint"><b>Unggah PDF, Word, Excel, atau Gambar (bisa lebih dari satu file)</b></div>
+    <div class="docket">
+      <div>
+        <div class="docket-title">Periksa Warna Cetak</div>
+        <div class="docket-sub">Deteksi halaman berwarna &amp; estimasi biaya cetak</div>
+      </div>
+      <svg class="regmark" viewBox="0 0 60 60">
+        <circle cx="30" cy="28" r="14" fill="none" stroke="#00AEEF" stroke-width="1.3" opacity="0.9" />
+        <circle cx="32" cy="30" r="14" fill="none" stroke="#EC008C" stroke-width="1.3" opacity="0.9" />
+        <circle cx="28" cy="30" r="14" fill="none" stroke="#F2C400" stroke-width="1.3" opacity="0.9" />
+        <line x1="30" y1="8" x2="30" y2="52" stroke="#EFEDE7" stroke-width="1" />
+        <line x1="8" y1="30" x2="52" y2="30" stroke="#EFEDE7" stroke-width="1" />
+      </svg>
     </div>
 
-    <div class="tier-ranges" id="tierRanges"></div>
+    <!-- Upload -->
+    <div class="card">
+      <div class="section-label"><b>Diproses langsung di browser — file tidak diunggah ke server mana pun</b></div>
+      <div class="uploader" id="uploader" tabindex="0">
+        <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.bmp,.webp,.svg"
+          multiple>
+        <div class="uploader-label">Klik atau seret file ke sini</div>
+        <div class="uploader-hint"><b>Unggah PDF, Word, Excel, atau Gambar (bisa lebih dari satu file)</b></div>
+      </div>
 
-    <div class="filelist" id="filelist"></div>
-    <div class="error" id="error"></div>
+      <div class="tier-ranges" id="tierRanges"></div>
 
-    <div class="progress-wrap" id="progressWrap">
-      <div class="progress-text" id="progressText">Memproses...</div>
-      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="filelist" id="filelist"></div>
+      <div class="error" id="error"></div>
+
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-text" id="progressText">Memproses...</div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
     </div>
-  </div>
 
-  <!-- Grand total across all uploaded documents -->
-  <div class="card" id="grandCard" style="display:none;">
-    <div class="section-label">Total Keseluruhan (Semua Dokumen)</div>
+    <!-- Grand total across all uploaded documents -->
+    <div class="card" id="grandCard" style="display:none;">
+      <div class="section-label">Total Keseluruhan (Semua Dokumen)</div>
 
-    <div>
-      <span class="field-label">Jumlah Cetak (rangkap)</span>
-      <input type="number" id="printQty" value="1" min="1" step="1" style="max-width:140px;">
+      <div>
+        <span class="field-label">Jumlah Cetak (rangkap)</span>
+        <input type="number" id="printQty" value="1" min="1" step="1" style="max-width:140px;">
+      </div>
+
+      <div style="margin-top:16px;">
+        <span class="field-label">Cetak 2 Sisi (Bolak-balik)</span>
+        <div class="duplex-options">
+          <label class="duplex-option"><input type="radio" name="duplexMode" id="duplexYes" value="yes"> Ya, cetak 2
+            sisi</label>
+          <label class="duplex-option"><input type="radio" name="duplexMode" id="duplexNo" value="no" checked> Tidak,
+            cetak 1 sisi (normal)</label>
+        </div>
+        <div class="price-lock-note" style="margin-top:8px;">Cetak 2 sisi menghemat kertas (1 lembar kertas = 2
+          halaman), sehingga ada potongan biaya kertas. Kalau jumlah halaman ganjil, 1 halaman sisa tetap dihitung harga
+          normal (tidak dapat potongan kertas).</div>
+      </div>
+
+      <div class="grand-total" style="margin-top:16px;">
+        <div class="label">Total estimasi cetak</div>
+        <div class="value" id="grandTotalValue">Rp 0</div>
+      </div>
+      <div class="grand-breakdown" id="grandBreakdown"></div>
+      <div class="doc-actions">
+        <button class="btn small" id="exportPdfBtn">Unduh Laporan Gabungan (PDF)</button>
+        <button class="btn small secondary" id="exportPngBtn">Unduh Laporan Gabungan (PNG)</button>
+      </div>
     </div>
 
-    <div class="grand-total" style="margin-top:16px;">
-      <div class="label">Total estimasi cetak</div>
-      <div class="value" id="grandTotalValue">Rp 0</div>
-    </div>
-    <div class="grand-breakdown" id="grandBreakdown"></div>
-    <div class="doc-actions">
-      <button class="btn small" id="exportPdfBtn">Unduh Laporan Gabungan (PDF)</button>
-      <button class="btn small secondary" id="exportPngBtn">Unduh Laporan Gabungan (PNG)</button>
-    </div>
-  </div>
-
-  <!-- Per-document result cards get appended here -->
-  <div id="documentsContainer"></div>
+    <!-- Per-document result cards get appended here -->
+    <div id="documentsContainer"></div>
 
     <!-- Price table + category thresholds (locked by default) -->
-  <div class="card">
-    <div class="section-label">
-      <span>Tabel Harga &amp; Batas Kategori</span>
-      <button class="btn-link" id="priceLockToggle">Ubah Pengaturan</button>
-    </div>
-
-    <div class="field-label" style="margin-bottom:10px;">Batas kategori berdasarkan persentase area berwarna per halaman</div>
-    <div class="tier-grid">
-      <div>
-        <span class="field-label">Batas atas Hitam Putih (%)</span>
-        <input type="number" id="tier1" value="20" min="0" max="100" step="1" disabled>
+    <div class="card">
+      <div class="section-label">
+        <span>Tabel Harga &amp; Batas Kategori</span>
+        <button class="btn-link" id="priceLockToggle">Ubah Pengaturan</button>
       </div>
-      <div>
-        <span class="field-label">Batas atas Warna (%)</span>
-        <input type="number" id="tier2" value="60" min="0" max="100" step="1" disabled>
-      </div>
-      <div>
-        <span class="field-label">Batas atas Full Warna (%)</span>
-        <input type="number" id="tier3" value="90" min="0" max="100" step="1" disabled>
-      </div>
-    </div>
-    <div class="tier-error" id="tierError">Urutan batas harus: Hitam Putih &lt; Warna &lt; Full Warna &lt; 100.</div>
 
-    <hr class="divider">
-    <table class="price-table">
-      <thead>
-        <tr>
-          <th>Kategori</th>
-          <th>Harga Normal /lbr</th>
-          <th>Harga Diskon /lbr</th>
-          <th>Min. Lembar utk Diskon</th>
-        </tr>
-      </thead>
-      <tbody id="priceTableBody"></tbody>
-    </table>
-    <div class="price-lock-note" id="priceLockNote">
-      Pengaturan terkunci (readonly). Klik "Ubah Pengaturan" dan masukkan password untuk menyesuaikan harga atau batas kategori, lalu simpan untuk mengunci kembali.
-      Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang diunggah) mencapai minimum. Pengaturan tersimpan otomatis di browser ini dan tetap ada meski halaman di-refresh.
-    </div>
-
-    <hr class="divider">
-    <div class="field-label" style="margin-bottom:10px;">Backup / pindahkan pengaturan (file JSON — permanen, bisa disimpan atau dipindah ke komputer lain)</div>
-    <div class="doc-actions" style="margin-top:0;">
-      <button class="btn small secondary" id="exportSettingsBtn">Unduh Pengaturan (JSON)</button>
-      <button class="btn small secondary" id="importSettingsBtn" disabled>Impor Pengaturan (JSON)</button>
-      <input type="file" id="importSettingsFile" accept="application/json,.json" style="display:none;">
-    </div>
-    <div class="price-lock-note" id="importSettingsNote">
-      Impor hanya bisa dipakai saat mode edit aktif (klik "Ubah Pengaturan" &amp; masukkan password dulu) — supaya file JSON dari luar tidak bisa mengubah harga sembarangan.
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="modalOverlay">
-  <div class="modal">
-    <div class="modal-head">
-      <div class="title" id="modalTitle">Halaman</div>
-      <button class="modal-close" id="modalClose" aria-label="Tutup">&times;</button>
-    </div>
-    <div class="modal-img-wrap"><img id="modalImg" alt="Preview halaman"></div>
-    <div class="modal-body">
-      <div class="modal-status" id="modalStatus">
-        <span id="modalStatusText">—</span>
-        <span id="modalStatusPct">—</span>
+      <div class="field-label" style="margin-bottom:10px;">Batas kategori berdasarkan persentase area berwarna per
+        halaman</div>
+      <div class="tier-grid">
+        <div>
+          <span class="field-label">Batas atas Hitam Putih (%)</span>
+          <input type="number" id="tier1" value="20" min="0" max="100" step="1" disabled>
+        </div>
+        <div>
+          <span class="field-label">Batas atas Warna (%)</span>
+          <input type="number" id="tier2" value="60" min="0" max="100" step="1" disabled>
+        </div>
+        <div>
+          <span class="field-label">Batas atas Full Warna (%)</span>
+          <input type="number" id="tier3" value="90" min="0" max="100" step="1" disabled>
+        </div>
       </div>
-      <div class="modal-note" id="modalNote"></div>
-      <div class="modal-cat-label">Koreksi kategori manual</div>
-      <div class="modal-cat-buttons">
-        <button class="modal-cat-btn" data-cat="bw">Hitam Putih</button>
-        <button class="modal-cat-btn" data-cat="color">Warna</button>
-        <button class="modal-cat-btn" data-cat="full">Full Warna</button>
-        <button class="modal-cat-btn" data-cat="block">Block Warna</button>
+      <div class="tier-error" id="tierError">Urutan batas harus: Hitam Putih &lt; Warna &lt; Full Warna &lt; 100.</div>
+
+      <hr class="divider">
+      <table class="price-table">
+        <thead>
+          <tr>
+            <th>Kategori</th>
+            <th>Harga Normal /lbr</th>
+            <th>Harga Diskon /lbr</th>
+            <th>Min. Lembar utk Diskon</th>
+          </tr>
+        </thead>
+        <tbody id="priceTableBody"></tbody>
+      </table>
+
+      <div style="margin-top:16px;max-width:240px;">
+        <span class="field-label">Harga Kertas per Lembar (Rp) — untuk cetak 2 sisi</span>
+        <input type="number" id="paperPrice" value="200" min="0" step="10" disabled>
+      </div>
+
+      <div class="price-lock-note" id="priceLockNote">
+        Pengaturan terkunci (readonly). Klik "Ubah Pengaturan" dan masukkan password untuk menyesuaikan harga atau batas
+        kategori, lalu simpan untuk mengunci kembali.
+        Harga per lembar otomatis memakai tarif diskon begitu jumlah halaman kategori tsb (gabungan semua dokumen yang
+        diunggah) mencapai minimum. Pengaturan tersimpan otomatis di browser ini dan tetap ada meski halaman di-refresh.
+      </div>
+
+      <hr class="divider">
+      <div class="field-label" style="margin-bottom:10px;">Backup / pindahkan pengaturan (file JSON — permanen, bisa
+        disimpan atau dipindah ke komputer lain)</div>
+      <div class="doc-actions" style="margin-top:0;">
+        <button class="btn small secondary" id="exportSettingsBtn">Unduh Pengaturan (JSON)</button>
+        <button class="btn small secondary" id="importSettingsBtn" disabled>Impor Pengaturan (JSON)</button>
+        <input type="file" id="importSettingsFile" accept="application/json,.json" style="display:none;">
+      </div>
+      <div class="price-lock-note" id="importSettingsNote">
+        Impor hanya bisa dipakai saat mode edit aktif (klik "Ubah Pengaturan" &amp; masukkan password dulu) — supaya
+        file JSON dari luar tidak bisa mengubah harga sembarangan.
       </div>
     </div>
   </div>
-</div>
 
-<script src="assets/pdf.min.js"></script>
-<script src="assets/pdf-worker-source.js"></script>
-<script src="assets/jspdf.umd.min.js"></script>
-<script src="assets/html2canvas.min.js"></script>
-<script src="assets/mammoth.browser.min.js"></script>
-<script src="assets/xlsx.full.min.js"></script>
-<script src="assets/app.js"></script>
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="title" id="modalTitle">Halaman</div>
+        <button class="modal-close" id="modalClose" aria-label="Tutup">&times;</button>
+      </div>
+      <div class="modal-img-wrap"><img id="modalImg" alt="Preview halaman"></div>
+      <div class="modal-body">
+        <div class="modal-status" id="modalStatus">
+          <span id="modalStatusText">—</span>
+          <span id="modalStatusPct">—</span>
+        </div>
+        <div class="modal-note" id="modalNote"></div>
+        <div class="modal-cat-label">Koreksi kategori manual</div>
+        <div class="modal-cat-buttons">
+          <button class="modal-cat-btn" data-cat="bw">Hitam Putih</button>
+          <button class="modal-cat-btn" data-cat="color">Warna</button>
+          <button class="modal-cat-btn" data-cat="full">Full Warna</button>
+          <button class="modal-cat-btn" data-cat="block">Block Warna</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/pdf.min.js"></script>
+  <script src="assets/pdf-worker-source.js"></script>
+  <script src="assets/jspdf.umd.min.js"></script>
+  <script src="assets/html2canvas.min.js"></script>
+  <script src="assets/mammoth.browser.min.js"></script>
+  <script src="assets/xlsx.full.min.js"></script>
+  <script src="assets/app.js"></script>
 </body>
+
 </html>

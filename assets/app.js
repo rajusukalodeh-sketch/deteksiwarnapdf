@@ -27,7 +27,8 @@ let pricing = {
   bw:    { normal: 500,  discount: 300,  minQty: 50 },
   color: { normal: 1200, discount: 900,  minQty: 50 },
   full:  { normal: 1800, discount: 1400, minQty: 50 },
-  block: { normal: 2500, discount: 2000, minQty: 50 }
+  block: { normal: 2500, discount: 2000, minQty: 50 },
+  paperPrice: 200 // harga kertas per lembar, dipakai untuk hitung potongan cetak 2 sisi
 };
 let pricingLocked = true;
 
@@ -66,6 +67,10 @@ function applySettingsObject(saved){
         pricing[cat] = Object.assign({}, pricing[cat], saved.pricing[cat]);
       }
     });
+    if (saved.pricing.paperPrice !== undefined){
+      pricing.paperPrice = saved.pricing.paperPrice;
+      paperPriceInput.value = saved.pricing.paperPrice;
+    }
   }
   if (saved.tiers){
     if (saved.tiers.t1 !== undefined) tier1Input.value = saved.tiers.t1;
@@ -75,6 +80,8 @@ function applySettingsObject(saved){
 }
 
 function currentSettingsObject(){
+  const paperVal = parseFloat(paperPriceInput.value);
+  pricing.paperPrice = isNaN(paperVal) ? pricing.paperPrice : paperVal;
   return {
     pricing,
     tiers: { t1: tier1Input.value, t2: tier2Input.value, t3: tier3Input.value },
@@ -107,6 +114,9 @@ const grandTotalValue = document.getElementById('grandTotalValue');
 const grandBreakdown = document.getElementById('grandBreakdown');
 const documentsContainer = document.getElementById('documentsContainer');
 const printQtyInput = document.getElementById('printQty');
+const duplexYesInput = document.getElementById('duplexYes');
+const duplexNoInput = document.getElementById('duplexNo');
+const paperPriceInput = document.getElementById('paperPrice');
 const exportPdfBtn = document.getElementById('exportPdfBtn');
 const exportPngBtn = document.getElementById('exportPngBtn');
 const modalOverlay = document.getElementById('modalOverlay');
@@ -280,6 +290,7 @@ priceLockToggle.addEventListener('click', () => {
   tier1Input.disabled = pricingLocked;
   tier2Input.disabled = pricingLocked;
   tier3Input.disabled = pricingLocked;
+  paperPriceInput.disabled = pricingLocked;
   importSettingsBtn.disabled = pricingLocked;
 
   if (pricingLocked){
@@ -332,6 +343,40 @@ function getPrintQty(){
   return (isNaN(q) || q < 1) ? 1 : q;
 }
 
+function isDuplex(){
+  return duplexYesInput.checked;
+}
+
+function getPaperPrice(){
+  const p = parseFloat(paperPriceInput.value);
+  return isNaN(p) ? 0 : p;
+}
+
+/* ============================================================
+   Rumus subtotal per kategori, dengan/tanpa cetak 2 sisi.
+   Cetak 2 sisi: N halaman * harga kategori = XYZ (biaya cetak normal),
+   lalu lembar kertas yang dihemat = floor(N/2) (1 lembar = 2 halaman),
+   potongan biaya kertas = lembar_hemat * harga_kertas = YXZ,
+   subtotal 2 sisi = XYZ - YXZ.
+   Kalau N ganjil, 1 halaman sisa otomatis tidak ikut dihemat
+   (floor membulatkan ke bawah) — tetap dihitung harga normal.
+   ============================================================ */
+function categorySubtotal(count, unitPrice, duplex, paperPrice){
+  const xyz = count * unitPrice;
+  if (!duplex || count === 0) return xyz;
+  const sheetsSaved = Math.floor(count / 2);
+  const yxz = sheetsSaved * paperPrice;
+  return xyz - yxz;
+}
+
+/* Hitung subtotal total (semua kategori dijumlahkan) untuk satu set
+   jumlah halaman per kategori — dipakai baik untuk total gabungan
+   maupun subtotal per dokumen. Kategori dikelompokkan & dihitung
+   satu-satu dulu (sesuai catatan), baru ditotal di akhir. */
+function calcTotalForCounts(counts, prices, duplex, paperPrice){
+  return CATEGORY_ORDER.reduce((sum, cat) => sum + categorySubtotal(counts[cat], prices[cat], duplex, paperPrice), 0);
+}
+
 function renderGrandTotal(){
   if (documents.length === 0){
     grandCard.style.display = 'none';
@@ -341,24 +386,53 @@ function renderGrandTotal(){
   const counts = aggregateCounts();
   const prices = unitPrices();
   const qty = getPrintQty();
+  const duplex = isDuplex();
+  const paperPrice = getPaperPrice();
+
+  /* Hitung subtotal tanpa duplex (biaya cetak murni) untuk perbandingan */
+  let subtotalNoDuplex = 0;
   let subtotalOnce = 0;
   const lines = CATEGORY_ORDER
     .filter(cat => counts[cat] > 0) // sembunyikan kategori yang halamannya 0
     .map(cat => {
-      const subtotal = counts[cat] * prices[cat];
+      const subtotal = categorySubtotal(counts[cat], prices[cat], duplex, paperPrice);
+      const subtotalNormal = counts[cat] * prices[cat]; // tanpa potongan duplex
       subtotalOnce += subtotal;
+      subtotalNoDuplex += subtotalNormal;
       const discounted = counts[cat] >= pricing[cat].minQty;
-      return `${CATEGORY_LABEL[cat]}: ${counts[cat]} hal. × ${fmtRp(prices[cat])}${discounted ? ' (harga diskon)' : ''} = ${fmtRp(subtotal)}`;
+      const sheetsSaved = duplex ? Math.floor(counts[cat] / 2) : 0;
+      const duplexNote = duplex && sheetsSaved > 0 ? ` (2 sisi, hemat ${sheetsSaved} lbr kertas)` : '';
+      return `${CATEGORY_LABEL[cat]}: ${counts[cat]} hal. × ${fmtRp(prices[cat])}${discounted ? ' (harga diskon)' : ''}${duplexNote} = ${fmtRp(subtotal)}`;
     });
   const total = subtotalOnce * qty;
-  const totalRounded = roundUpTotal(total);
-  grandTotalValue.textContent = fmtRp(totalRounded);
+  grandTotalValue.textContent = fmtRp(total);
   const totalPages = documents.reduce((s,d) => s + d.results.length, 0);
-  grandBreakdown.innerHTML = `${documents.length} dokumen, ${totalPages} halaman total<br>` + lines.join('<br>')
-    + (qty > 1 ? `<br><b>Subtotal 1x cetak: ${fmtRp(subtotalOnce)} → × ${qty}x cetak = ${fmtRp(total)}</b>` : '');
+  let html = `${documents.length} dokumen, ${totalPages} halaman total${duplex ? ' — cetak 2 sisi' : ''}<br>` + lines.join('<br>');
+  if (qty > 1) html += `<br><b>Subtotal 1x cetak: ${fmtRp(subtotalOnce)} → × ${qty}x cetak = ${fmtRp(total)}</b>`;
+  /* Tampilkan potongan duplex jika ada */
+  if (duplex) {
+    const duplexSavings = subtotalNoDuplex - subtotalOnce;
+    if (duplexSavings > 0) html += `<br><span style="color:#2e7d32;">Hemat kertas 2 sisi: −${fmtRp(duplexSavings)}${qty > 1 ? ` (per cetak) → −${fmtRp(duplexSavings * qty)} total` : ''}</span>`;
+  }
+  grandBreakdown.innerHTML = html;
 }
 
 printQtyInput.addEventListener('input', () => {
+  renderGrandTotal();
+  documents.forEach(refreshDocumentUI);
+});
+
+[duplexYesInput, duplexNoInput].forEach(input => {
+  if (!input) return;
+  ['change', 'click', 'input'].forEach(evt => {
+    input.addEventListener(evt, () => {
+      renderGrandTotal();
+      documents.forEach(refreshDocumentUI);
+    });
+  });
+});
+
+paperPriceInput.addEventListener('input', () => {
   renderGrandTotal();
   documents.forEach(refreshDocumentUI);
 });
@@ -896,8 +970,10 @@ function refreshDocumentUI(doc){
 
   const prices = unitPrices();
   const qty = getPrintQty();
-  const subtotal = CATEGORY_ORDER.reduce((s, cat) => s + counts[cat] * prices[cat], 0) * qty;
-  card.querySelector('[data-stat="subtotal"]').textContent = fmtRpRounded(subtotal) + (qty > 1 ? ` (×${qty}x cetak)` : '');
+  const duplex = isDuplex();
+  const paperPrice = getPaperPrice();
+  const subtotal = calcTotalForCounts(counts, prices, duplex, paperPrice) * qty;
+  card.querySelector('[data-stat="subtotal"]').textContent = fmtRp(subtotal) + (qty > 1 ? ` (×${qty}x cetak)` : '') + (duplex ? ' (2 sisi)' : '');
 }
 
 function escapeHTML(str){
@@ -960,22 +1036,26 @@ catButtons.forEach(btn => {
 /* ============================================================
    Export: ONE combined report covering all uploaded documents
    ============================================================ */
-function categoryRowsHTML(counts, prices){
+function categoryRowsHTML(counts, prices, duplex, paperPrice){
   const colorMap = { bw:'#1C63B7', color:'#D9A400', full:'#C81E2C', block:'#141414' };
   let total = 0;
-  const rows = CATEGORY_ORDER.map(cat => {
-    const subtotal = counts[cat] * prices[cat];
-    total += subtotal;
-    return `<tr>
-      <td style="padding:8px 10px;border-bottom:1px solid #DDD9CC;">
-        <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${colorMap[cat]};margin-right:8px;vertical-align:-1px;"></span>
-        ${CATEGORY_LABEL[cat]}
-      </td>
-      <td style="padding:8px 10px;border-bottom:1px solid #DDD9CC;text-align:right;">${counts[cat]}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #DDD9CC;text-align:right;">${fmtRp(prices[cat])}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #DDD9CC;text-align:right;font-weight:600;">${fmtRp(subtotal)}</td>
-    </tr>`;
-  }).join('');
+  const rows = CATEGORY_ORDER
+    .filter(cat => counts[cat] > 0)
+    .map(cat => {
+      const subtotal = categorySubtotal(counts[cat], prices[cat], duplex, paperPrice);
+      total += subtotal;
+      const sheetsSaved = duplex ? Math.floor(counts[cat] / 2) : 0;
+      const duplexNote = duplex && sheetsSaved > 0 ? `<div style="font-size:9.5px;color:#96927F;margin-top:2px;">2 sisi — hemat ${sheetsSaved} lbr kertas</div>` : '';
+      return `<tr>
+        <td style="padding:8px 10px;border-bottom:1px solid #DDD9CC;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${colorMap[cat]};margin-right:8px;vertical-align:-1px;"></span>
+          ${CATEGORY_LABEL[cat]}
+        </td>
+        <td style="padding:8px 10px;border-bottom:1px solid #DDD9CC;text-align:right;">${counts[cat]}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #DDD9CC;text-align:right;">${fmtRp(prices[cat])}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #DDD9CC;text-align:right;font-weight:600;">${fmtRp(subtotal)}${duplexNote}</td>
+      </tr>`;
+    }).join('');
   return { rows, total };
 }
 
@@ -997,21 +1077,47 @@ function legendHTML(){
   </div>`;
 }
 
-function buildCombinedReportNode(){
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) + ' ' + now.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' });
+/* Bagian header + ringkasan total (dipakai oleh kedua mode PDF & PNG) */
+function buildReportHeaderHTML(dateStr, totalPages, qty, duplex, grandRows, grandTotal){
+  return `
+    <div style="font-family:Arial,Helvetica,sans-serif;padding:36px;color:#1C1B19;">
+      <div style="background:#1C1B19;color:#EFEDE7;padding:18px 22px;border-radius:4px;margin-bottom:22px;">
+        <div style="font-size:22px;font-weight:800;letter-spacing:0.3px;text-transform:uppercase;">Periksa Warna Cetak</div>
+        <div style="font-size:11px;color:#C9C6BB;margin-top:5px;">Laporan Gabungan Hasil Deteksi &amp; Estimasi Biaya</div>
+      </div>
 
-  const aggCounts = aggregateCounts();
-  const prices = unitPrices();
-  const qty = getPrintQty();
-  const { rows: grandRows, total: grandTotalOnce } = categoryRowsHTML(aggCounts, prices);
-  const grandTotal = grandTotalOnce * qty;
-  const totalPages = documents.reduce((s,d) => s + d.results.length, 0);
+      <div style="font-size:12px;margin-bottom:4px;"><b>Jumlah dokumen:</b> ${documents.length}</div>
+      <div style="font-size:12px;margin-bottom:4px;"><b>Total halaman:</b> ${totalPages}</div>
+      <div style="font-size:12px;margin-bottom:4px;"><b>Jumlah cetak (rangkap):</b> ${qty}x</div>
+      <div style="font-size:12px;margin-bottom:4px;"><b>Cetak 2 sisi:</b> ${duplex ? 'Ya' : 'Tidak'}</div>
+      <div style="font-size:12px;margin-bottom:18px;"><b>Tanggal dibuat:</b> ${dateStr}</div>
 
-  const docSections = documents.map((doc, idx) => {
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;margin:18px 0 10px;">Ringkasan Total (Semua Dokumen, 1x Cetak)</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px 10px;border-bottom:2px solid #1C1B19;font-size:10px;text-transform:uppercase;">Kategori</th>
+            <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #1C1B19;font-size:10px;text-transform:uppercase;">Halaman</th>
+            <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #1C1B19;font-size:10px;text-transform:uppercase;">Harga/lbr</th>
+            <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #1C1B19;font-size:10px;text-transform:uppercase;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${grandRows}</tbody>
+      </table>
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#1C1B19;color:#EFEDE7;padding:14px 16px;border-radius:4px;margin-top:14px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#C9C6BB;">Total Estimasi Cetak Keseluruhan${qty > 1 ? ` (×${qty}x)` : ''}</span>
+        <span style="font-size:20px;font-weight:800;">${fmtRp(grandTotal)}</span>
+      </div>
+      ${legendHTML()}
+  `;
+}
+
+/* Rincian per dokumen (hanya untuk mode PDF, tidak dipakai di PNG) */
+function buildDocSectionsHTML(prices, qty, duplex, paperPrice){
+  return documents.map((doc, idx) => {
     const counts = { bw: 0, color: 0, full: 0, block: 0 };
     doc.results.forEach(r => { if (r && !r.error) counts[effectiveCategory(r)]++; });
-    const { rows, total: totalOnce } = categoryRowsHTML(counts, prices);
+    const { rows, total: totalOnce } = categoryRowsHTML(counts, prices, duplex, paperPrice);
     const total = totalOnce * qty;
     return `
       <div style="margin-top:${idx === 0 ? '10' : '30'}px;padding-top:${idx === 0 ? '0' : '20'}px;${idx > 0 ? 'border-top:1px dashed #DDD9CC;' : ''}">
@@ -1029,57 +1135,48 @@ function buildCombinedReportNode(){
           <tbody>${rows}</tbody>
         </table>
         <div style="display:flex;justify-content:flex-end;margin-top:8px;font-size:12px;font-weight:700;">
-          Subtotal dokumen (1x cetak): ${fmtRp(totalOnce)}${qty > 1 ? ` &nbsp;→&nbsp; ×${qty}x cetak = ${fmtRp(total)}` : ''} &nbsp;→&nbsp; dibulatkan: ${fmtRpRounded(total)}
+          Subtotal dokumen (1x cetak): ${fmtRp(totalOnce)}${qty > 1 ? ` &nbsp;→&nbsp; ×${qty}x cetak = ${fmtRp(total)}` : ''}
         </div>
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;margin:16px 0 8px;color:#615E54;">Peta Halaman</div>
         <div style="display:grid;grid-template-columns:repeat(22,22px);gap:3px;">${pageMapHTML(doc)}</div>
       </div>
     `;
   }).join('');
+}
+
+function buildCombinedReportNode(mode){
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) + ' ' + now.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' });
+
+  const aggCounts = aggregateCounts();
+  const prices = unitPrices();
+  const qty = getPrintQty();
+  const duplex = isDuplex();
+  const paperPrice = getPaperPrice();
+  const { rows: grandRows, total: grandTotalOnce } = categoryRowsHTML(aggCounts, prices, duplex, paperPrice);
+  const grandTotal = grandTotalOnce * qty;
+  const totalPages = documents.reduce((s,d) => s + d.results.length, 0);
 
   const root = document.createElement('div');
   root.className = 'report-root';
-  root.innerHTML = `
-    <div style="font-family:Arial,Helvetica,sans-serif;padding:36px;color:#1C1B19;">
-      <div style="background:#1C1B19;color:#EFEDE7;padding:18px 22px;border-radius:4px;margin-bottom:22px;">
-        <div style="font-size:22px;font-weight:800;letter-spacing:0.3px;text-transform:uppercase;">Periksa Warna Cetak</div>
-        <div style="font-size:11px;color:#C9C6BB;margin-top:5px;">Laporan Gabungan Hasil Deteksi &amp; Estimasi Biaya</div>
-      </div>
 
-      <div style="font-size:12px;margin-bottom:4px;"><b>Jumlah dokumen:</b> ${documents.length}</div>
-      <div style="font-size:12px;margin-bottom:4px;"><b>Total halaman:</b> ${totalPages}</div>
-      <div style="font-size:12px;margin-bottom:4px;"><b>Jumlah cetak (rangkap):</b> ${qty}x</div>
-      <div style="font-size:12px;margin-bottom:18px;"><b>Tanggal dibuat:</b> ${dateStr}</div>
-
-      <div style="font-size:13px;font-weight:700;text-transform:uppercase;margin:18px 0 10px;">Ringkasan Total (Semua Dokumen, 1x Cetak)</div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <thead>
-          <tr>
-            <th style="text-align:left;padding:8px 10px;border-bottom:2px solid #1C1B19;font-size:10px;text-transform:uppercase;">Kategori</th>
-            <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #1C1B19;font-size:10px;text-transform:uppercase;">Halaman</th>
-            <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #1C1B19;font-size:10px;text-transform:uppercase;">Harga/lbr</th>
-            <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #1C1B19;font-size:10px;text-transform:uppercase;">Subtotal</th>
-          </tr>
-        </thead>
-        <tbody>${grandRows}</tbody>
-      </table>
-      <div style="display:flex;justify-content:space-between;align-items:center;background:#1C1B19;color:#EFEDE7;padding:14px 16px;border-radius:4px;margin-top:14px;">
-        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#C9C6BB;">Total Estimasi Cetak Keseluruhan${qty > 1 ? ` (×${qty}x)` : ''} — dibulatkan</span>
-        <span style="font-size:20px;font-weight:800;">${fmtRpRounded(grandTotal)}</span>
-      </div>
-      ${grandTotal !== roundUpTotal(grandTotal) ? `<div style="font-size:10.5px;color:#96927F;margin-top:6px;text-align:right;">Sebelum dibulatkan: ${fmtRp(grandTotal)}</div>` : ''}
-      ${legendHTML()}
-
-      <div style="font-size:13px;font-weight:700;text-transform:uppercase;margin:30px 0 4px;border-top:2px solid #1C1B19;padding-top:20px;">Rincian per Dokumen</div>
-      ${docSections}
-    </div>
-  `;
+  if (mode === 'png') {
+    /* Mode PNG: hanya sampai Total Estimasi Cetak Keseluruhan */
+    root.innerHTML = buildReportHeaderHTML(dateStr, totalPages, qty, duplex, grandRows, grandTotal) + '</div>';
+  } else {
+    /* Mode PDF: lengkap dengan rincian per dokumen */
+    const docSections = buildDocSectionsHTML(prices, qty, duplex, paperPrice);
+    root.innerHTML = buildReportHeaderHTML(dateStr, totalPages, qty, duplex, grandRows, grandTotal)
+      + `<div style="font-size:13px;font-weight:700;text-transform:uppercase;margin:30px 0 4px;border-top:2px solid #1C1B19;padding-top:20px;">Rincian per Dokumen</div>`
+      + docSections
+      + '</div>';
+  }
   return root;
 }
 
 async function exportCombinedReport(format){
   if (documents.length === 0) return;
-  const node = buildCombinedReportNode();
+  const node = buildCombinedReportNode(format);
   document.body.appendChild(node);
 
   try {
